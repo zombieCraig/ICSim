@@ -462,6 +462,42 @@ int main(int argc, char *argv[]) {
 		    case SDLK_RIGHT:
 			turning = 1;
 			break;
+		    case SDLK_LSHIFT:
+			lock_enabled = 1;
+			if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+			break;
+		    case SDLK_RSHIFT:
+			unlock_enabled = 1;
+			if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+			break;
+		    case SDLK_a:
+			if(lock_enabled) {
+				send_lock(CAN_DOOR1_LOCK);
+			} else if(unlock_enabled) {
+				send_unlock(CAN_DOOR1_LOCK);
+			}
+			break;
+		    case SDLK_b:
+			if(lock_enabled) {
+				send_lock(CAN_DOOR2_LOCK);
+			} else if(unlock_enabled) {
+				send_unlock(CAN_DOOR2_LOCK);
+			}
+			break;
+		    case SDLK_x:
+			if(lock_enabled) {
+				send_lock(CAN_DOOR3_LOCK);
+			} else if(unlock_enabled) {
+				send_unlock(CAN_DOOR3_LOCK);
+			}
+			break;
+		    case SDLK_y:
+			if(lock_enabled) {
+				send_lock(CAN_DOOR4_LOCK);
+			} else if(unlock_enabled) {
+				send_unlock(CAN_DOOR4_LOCK);
+			}
+			break;
 		}
 		kk_check(event.key.keysym.sym);
 	   	break;
@@ -473,6 +509,12 @@ int main(int argc, char *argv[]) {
 		    case SDLK_LEFT:
 		    case SDLK_RIGHT:
 			turning = 0;
+			break;
+		    case SDLK_LSHIFT:
+			lock_enabled = 0;
+			break;
+		    case SDLK_RSHIFT:
+			unlock_enabled = 0;
 			break;
 		}
 		break;
