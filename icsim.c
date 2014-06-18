@@ -411,7 +411,14 @@ int main(int argc, char *argv[]) {
 	    case SDL_QUIT:
 		running = 0;
 		break;
+	    case SDL_WINDOWEVENT:
+	    switch(event.window.event) {
+		case SDL_WINDOWEVENT_ENTER:
+			redraw_ic();
+		break;
+	    }
    	}
+	SDL_Delay(3);
     }
 
       nbytes = recvmsg(can, &msg, 0);
