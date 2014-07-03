@@ -286,6 +286,11 @@ void kill_child(int sig) {
 	kill(play_id, SIGKILL);
 }
 
+void redraw_screen() {
+  SDL_RenderCopy(renderer, base_texture, NULL, NULL);
+  SDL_RenderPresent(renderer);
+}
+
 void print_joy_info() {
 	printf("Name: %s\n", SDL_JoystickNameForIndex(0));
 	printf("Number of Axes: %d\n", SDL_JoystickNumAxes(gJoystick));
@@ -447,7 +452,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
   }
-  window = SDL_CreateWindow("CANBus Control Panel", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN );
+  window = SDL_CreateWindow("CANBus Control Panel", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
   if(window == NULL) {
         printf("Window could not be shown\n");
   }
@@ -466,6 +471,8 @@ int main(int argc, char *argv[]) {
 	    case SDL_WINDOWEVENT:
 		switch(event.window.event) {
 		case SDL_WINDOWEVENT_ENTER:
+		case SDL_WINDOWEVENT_RESIZED:
+			redraw_screen();
 			break;
 		}
 	    case SDL_KEYDOWN:

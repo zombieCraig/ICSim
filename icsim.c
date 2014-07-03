@@ -376,6 +376,9 @@ int main(int argc, char *argv[]) {
 	signal_pos = rand() % 9;
 	speed_pos = rand() % 8;
 	printf("Seed: %d\n", seed);
+	FILE *fdseed = fopen("/tmp/icsim_seed.txt", "w");
+	fprintf(fdseed, "%d\n", seed);
+	fclose(fdseed);
   }
 
   SDL_Window *window = NULL;
@@ -384,7 +387,7 @@ int main(int argc, char *argv[]) {
 	printf("SDL Could not initializes\n");
 	exit(40);
   }
-  window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN );
+  window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN); // | SDL_WINDOW_RESIZABLE);
   if(window == NULL) {
 	printf("Window could not be shown\n");
   }
@@ -414,6 +417,7 @@ int main(int argc, char *argv[]) {
 	    case SDL_WINDOWEVENT:
 	    switch(event.window.event) {
 		case SDL_WINDOWEVENT_ENTER:
+		case SDL_WINDOWEVENT_RESIZED:
 			redraw_ic();
 		break;
 	    }
