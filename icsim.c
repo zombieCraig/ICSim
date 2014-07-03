@@ -11,6 +11,7 @@
 #include <getopt.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <net/if.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
@@ -297,6 +298,7 @@ int main(int argc, char *argv[]) {
   struct msghdr msg;
   struct cmsghdr *cmsg;
   struct timeval tv, timeout_config = { 0, 0 };
+  struct stat dirstat;
   fd_set rdfs;
   char ctrlmsg[CMSG_SPACE(sizeof(struct timeval)) + CMSG_SPACE(sizeof(__u32))];
   int running = 1;
@@ -328,6 +330,12 @@ int main(int argc, char *argv[]) {
   if (optind >= argc) Usage("You must specify at least one can device");
 
   if (seed && randomize) Usage("You can not specify a seed value AND randomize the seed");
+
+  // Verify data directory exists
+  if(stat(DATA_DIR, &dirstat) == -1) {
+  	printf("ERROR: DATA_DIR not found.  Define in make file or run in src dir\n");
+	exit(34);
+  }
   
   // Create a new raw CAN socket
   can = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -422,7 +430,7 @@ int main(int argc, char *argv[]) {
 		break;
 	    }
    	}
-	SDL_Delay(3);
+      SDL_Delay(3);
     }
 
       nbytes = recvmsg(can, &msg, 0);
