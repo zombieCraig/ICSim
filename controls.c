@@ -47,24 +47,62 @@
 #define DOOR_UNLOCKED 1
 #define SCREEN_WIDTH 835
 #define SCREEN_HEIGHT 608
+#define JOY_UNKNOWN -1
 #define BUTTON_LOCK 4
+#define PS3_BUTTON_LOCK 10
 #define BUTTON_UNLOCK 5
+#define PS3_BUTTON_UNLOCK 11
 #define BUTTON_A 0
+#define PS3_BUTTON_A 14
 #define BUTTON_B 1
+#define PS3_BUTTON_B 13
 #define BUTTON_X 2
+#define PS3_BUTTON_X 15 
 #define BUTTON_Y 3
+#define PS3_BUTTON_Y 12
 #define BUTTON_START 7
+#define PS3_BUTTON_START 3
 #define AXIS_LEFT_V 0
+#define PS3_AXIS_LEFT_V 0
 #define AXIS_LEFT_H 1
+#define PS3_AXIS_LEFT_H 1
 #define AXIS_L2 2
+#define PS3_AXIS_L2 12
 #define AXIS_RIGHT_H 3
+#define PS3_AXIS_RIGHT_H 3
 #define AXIS_RIGHT_V 4
+#define PS3_AXIS_RIGHT_V 2
 #define AXIS_R2 5
-#define MAX_SPEED 260.0
-#define ACCEL_RATE 20.0 // 0-MAX_SPEED in seconds
+#define PS3_AXIS_R2 13
+#define PS3_X_ROT 4
+#define PS3_Y_ROT 5
+#define PS3_Z_ROT 6 // The rotations are just guessed
+#define MAX_SPEED 90.0 // Limiter 260.0 is full guage speed
+#define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
+#define USB_CONTROLLER 0
+#define PS3_CONTROLLER 1
+
+int gButtonY = BUTTON_Y;
+int gButtonX = BUTTON_X;
+int gButtonA = BUTTON_A;
+int gButtonB = BUTTON_B;
+int gButtonStart = BUTTON_START;
+int gButtonLock = BUTTON_LOCK;
+int gButtonUnlock = BUTTON_UNLOCK;
+int gAxisL2 = AXIS_L2;
+int gAxisR2 = AXIS_R2;
+int gAxisRightH = AXIS_RIGHT_H;
+int gAxisRightV = AXIS_RIGHT_V;
+int gAxisLeftH = AXIS_LEFT_H;
+int gAxisLeftV = AXIS_LEFT_V;
+// Acelleromoter axis info
+int gJoyX = JOY_UNKNOWN;
+int gJoyY = JOY_UNKNOWN;
+int gJoyZ = JOY_UNKNOWN;
 
 //Analog joystick dead zone
 const int JOYSTICK_DEAD_ZONE = 8000;
+int gLastAccelValue = 0; // Non analog R2
 
 int s; // socket
 struct canfd_frame cf;
@@ -98,8 +136,10 @@ int kk = 0;
 char data_file[256];
 SDL_GameController *gGameController = NULL;
 SDL_Joystick *gJoystick = NULL;
+SDL_Haptic *gHaptic = NULL;
 SDL_Renderer *renderer = NULL;
 SDL_Texture *base_texture = NULL;
+int gControllerType = USB_CONTROLLER;
 
 void kk_check(int);
 
@@ -187,7 +227,10 @@ void checkAccel() {
 			if(current_speed < 1) current_speed = 0;
 		} else if(throttle > 0) {
 			current_speed += rate;
-			if(current_speed > MAX_SPEED) current_speed = MAX_SPEED;
+			if(current_speed > MAX_SPEED) { // Limiter
+				current_speed = MAX_SPEED;
+				if(gHaptic != NULL) {SDL_HapticRumblePlay( gHaptic, 0.5, 1000); printf("DEBUG HAPTIC\n"); }
+			}
 		}
 		send_speed();
 		lastAccel = currentTime;
@@ -212,12 +255,24 @@ void checkTurn() {
 // Takes R2 joystick value and converts it to throttle speed
 void accelerate(int value) {
 	// Check dead zones
-	if(value < -JOYSTICK_DEAD_ZONE) {
-		throttle = -1;
-	} else if(value > JOYSTICK_DEAD_ZONE) {
-		throttle = 1;
+	if(gControllerType == PS3_CONTROLLER) {
+		// PS3 works different.  the value range is 0-32k
+		if (value < gLastAccelValue) {
+			throttle = -1;
+		} else if (value > gLastAccelValue) {
+			throttle = 1;
+		} else {
+			throttle = 0;
+		}
+		gLastAccelValue = value;
 	} else {
-		throttle = 0;
+		if(value < -JOYSTICK_DEAD_ZONE) {
+			throttle = -1;
+		} else if(value > JOYSTICK_DEAD_ZONE) {
+			throttle = 1;
+		} else {
+			throttle = 0;
+		}
 	}
 }
 
@@ -291,11 +346,61 @@ void redraw_screen() {
   SDL_RenderPresent(renderer);
 }
 
+// Maps the controllers buttons
+void map_joy() {
+	switch(gControllerType) {
+	case USB_CONTROLLER:
+		gButtonA = BUTTON_A;
+		gButtonB = BUTTON_B;
+		gButtonX = BUTTON_X;
+		gButtonY = BUTTON_Y;
+		gButtonStart = BUTTON_START;
+		gButtonLock = BUTTON_LOCK;
+		gButtonUnlock = BUTTON_UNLOCK;
+		gAxisL2 = AXIS_L2;
+		gAxisR2 = AXIS_R2;
+		gAxisRightH = AXIS_RIGHT_H;
+		gAxisRightV = AXIS_RIGHT_V;
+		gAxisLeftH = AXIS_LEFT_H;
+		gAxisLeftV = AXIS_LEFT_V;
+		break;
+	case PS3_CONTROLLER:
+		gButtonA = PS3_BUTTON_A;
+		gButtonB = PS3_BUTTON_B;
+		gButtonX = PS3_BUTTON_X;
+		gButtonY = PS3_BUTTON_Y;
+		gButtonStart = PS3_BUTTON_START;
+		gButtonLock = PS3_BUTTON_LOCK;
+		gButtonUnlock = PS3_BUTTON_UNLOCK;
+		gAxisL2 = PS3_AXIS_L2;
+		gAxisR2 = PS3_AXIS_R2;
+		gAxisRightH = PS3_AXIS_RIGHT_H;
+		gAxisRightV = PS3_AXIS_RIGHT_V;
+		gAxisLeftH = PS3_AXIS_LEFT_H;
+		gAxisLeftV = PS3_AXIS_LEFT_V;
+		gJoyX = PS3_X_ROT;
+		gJoyY = PS3_Y_ROT;
+		gJoyZ = PS3_Z_ROT;
+ 		break; 
+	default:
+	printf("Unknown controller type for mapping\n");
+  	}
+}
+
 void print_joy_info() {
 	printf("Name: %s\n", SDL_JoystickNameForIndex(0));
 	printf("Number of Axes: %d\n", SDL_JoystickNumAxes(gJoystick));
 	printf("Number of Buttons: %d\n", SDL_JoystickNumButtons(gJoystick));
 	if(SDL_JoystickNumBalls(gJoystick) > 0) printf("Number of Balls: %d\n", SDL_JoystickNumBalls(gJoystick));
+        if(strncmp(SDL_JoystickNameForIndex(0), "PLAYSTATION(R)3 Controller", 25) == 0) {
+		// PS3 Rumble controller via BT
+		gControllerType = PS3_CONTROLLER;
+	}
+        if(strncmp(SDL_JoystickNameForIndex(0), "Sony PLAYSTATION(R)3 Controller", 30) == 0) {
+		// PS3 directly connected
+		gControllerType = PS3_CONTROLLER;
+	}
+	map_joy();
 }
 
 void usage(char *msg) {
@@ -441,6 +546,7 @@ int main(int argc, char *argv[]) {
 		printf(" Warning: Unable to open game controller. %s\n", SDL_GetError() );
 	  } else {
 		gJoystick = SDL_GameControllerGetJoystick(gGameController);
+		gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
 		print_joy_info();
 	  }
         } else {
@@ -448,6 +554,8 @@ int main(int argc, char *argv[]) {
 		if(gJoystick == NULL) {
 			printf(" Warning: Could not open joystick\n");
 		} else {
+			gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
+			if (gHaptic == NULL) printf("No Haptic support\n");
 			print_joy_info();
 		}
 	}
@@ -461,6 +569,7 @@ int main(int argc, char *argv[]) {
   base_texture = SDL_CreateTextureFromSurface(renderer, image);
   SDL_RenderCopy(renderer, base_texture, NULL, NULL);
   SDL_RenderPresent(renderer);
+  int button, axis; // Used for checking dynamic joystick mappings
 
   while(running) {
     while( SDL_PollEvent(&event) != 0 ) {
@@ -543,94 +652,84 @@ int main(int argc, char *argv[]) {
 		}
 		break;
 	    case SDL_JOYAXISMOTION:
-		switch(event.jaxis.axis) {
-		case AXIS_LEFT_H:
+		axis = event.jaxis.axis;
+		if(axis == gAxisLeftH) {
 			ud(event.jaxis.value);
-			break;
-		case AXIS_LEFT_V:
+		} else if(axis == gAxisLeftV) {
 			turn(event.jaxis.value);
-			break;
-		case AXIS_RIGHT_H:
-			break;
-		case AXIS_RIGHT_V:
-			break;
-		case AXIS_L2:
-			break;
-		case AXIS_R2:
+		} else if(axis == gAxisR2) {
 			accelerate(event.jaxis.value);
-			break;
-		default:
-			printf("Unkown axis: %d\n", event.jaxis.axis);
+		} else if(axis == gAxisRightH ||
+			  axis == gAxisRightV ||
+			  axis == gAxisL2 ||
+			  axis == gJoyX ||
+			  axis == gJoyY ||
+			  axis == gJoyZ) {
+			// Do nothing, the axis is known just not connected
+		} else {
+			if (debug) printf("Unkown axis: %d\n", event.jaxis.axis);
 		}
 		break;
 	    case SDL_JOYBUTTONDOWN:
-		switch(event.jbutton.button) {
-		case BUTTON_LOCK:
+                button = event.jbutton.button;
+		if(button == gButtonLock) {
 			lock_enabled = 1;
 			if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-			break;
-		case BUTTON_UNLOCK:
+		} else if(button == gButtonUnlock) {
 			unlock_enabled = 1;
 			if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-			break;
-		case BUTTON_A:
+		} else if(button == gButtonA) {
 			if(lock_enabled) {
 				send_lock(CAN_DOOR1_LOCK);
 			} else if(unlock_enabled) {
 				send_unlock(CAN_DOOR1_LOCK);
 			}
 			kk_check(SDLK_a);
-			break;
-		case BUTTON_B:
+		} else if (button == gButtonB) {
 			if(lock_enabled) {
 				send_lock(CAN_DOOR2_LOCK);
 			} else if(unlock_enabled) {
 				send_unlock(CAN_DOOR2_LOCK);
 			}
 			kk_check(SDLK_b);
-			break;
-		case BUTTON_X:
+		} else if (button == gButtonX) {
 			if(lock_enabled) {
 				send_lock(CAN_DOOR3_LOCK);
 			} else if(unlock_enabled) {
 				send_unlock(CAN_DOOR3_LOCK);
 			}
 			kk_check(SDLK_x);
-			break;
-		case BUTTON_Y:
+		} else if (button == gButtonY) {
 			if(lock_enabled) {
 				send_lock(CAN_DOOR4_LOCK);
 			} else if(unlock_enabled) {
 				send_unlock(CAN_DOOR4_LOCK);
 			}
 			kk_check(SDLK_y);
-			break;
-		case BUTTON_START:
+		} else if (button == gButtonStart) {
 			kk_check(SDLK_RETURN);
-			break;
-		default:
+		} else {
 			if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
-			break;
 		}
 		break;
 	    case SDL_JOYBUTTONUP:
-		switch(event.jbutton.button) {
-		case BUTTON_LOCK:
+		button = event.jbutton.button;
+		if(button == gButtonLock) {
 			lock_enabled = 0;
-			break;
-		case BUTTON_UNLOCK:
+		} else if(button == gButtonUnlock) {
 			unlock_enabled = 0;
-			break;
-		default:
+		} else {
 			//if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
-			break;
 		}
 		break;
 	    case SDL_JOYDEVICEADDED:
 		// Only use the first controller
 		if(event.cdevice.which == 0) {
 			gJoystick = SDL_JoystickOpen(0);
-			if(gJoystick) print_joy_info();
+			if(gJoystick) {
+				gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
+				print_joy_info();
+			}
 		}
 		break;
 	    case SDL_JOYDEVICEREMOVED:
@@ -644,6 +743,7 @@ int main(int argc, char *argv[]) {
 		if(gGameController == NULL) {
 			gGameController = SDL_GameControllerOpen(0);
 			gJoystick = SDL_GameControllerGetJoystick(gGameController);
+			gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
 			print_joy_info();
 		}
 		break;
