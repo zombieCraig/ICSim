@@ -8,7 +8,13 @@ Compiling
 You will need:
 * SDL2
 * SDL2_Image
-* can-utils https://git.gitorious.org/linux-can/can-utils.git
+* can-utils
+
+You can get can-utils from github or on Ubuntu you may run the follwoing
+
+```
+  sudo apt-get install libsdl2-dev libsdl2-image-dev can-utils  
+```
 
 Testing on a virtual CAN interface
 ----------------------------------
@@ -44,6 +50,11 @@ The hard coded defaults should be in sync and the controls should control the IC
 an XBox controller to interact with the controls interface.  The controls app will generate corrosponding CAN packets
 based on the buttons you press.  The IC Sim sniffs the CAN and looks for relevant CAN packets that would change the
 display.
+
+Troubleshooting
+---------------
+* If you get an error about canplayer then you may not have can-utils properly installed and in your path.
+* If the controller does not seem to be responding make sure the controls window is selected and active
 
 CAN Hacking Training Usage
 --------------------------
