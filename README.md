@@ -56,6 +56,11 @@ Troubleshooting
 * If you get an error about canplayer then you may not have can-utils properly installed and in your path.
 * If the controller does not seem to be responding make sure the controls window is selected and active
 
+## lib.o not linking
+If lib.o doesn't link it's probably because it's the wrong arch for your platform.  To fix this you will
+want to compile can-utils and copy the newly compiled lib.o to the icsim directory.  You can get can-utils
+from: https://github.com/linux-can/can-utils
+
 CAN Hacking Training Usage
 --------------------------
 To *safely* train on CAN hacking you can play back a sample recording included in this repo of generic CAN traffic.  This will
