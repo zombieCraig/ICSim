@@ -336,7 +336,9 @@ void kk_check(int k) {
 void play_can_traffic() {
 	char can2can[50];
 	snprintf(can2can, 49, "%s=can0", ifr.ifr_name);
-	if(execlp("canplayer", "canplayer", "-I", traffic_log, "-l", "i", can2can, NULL) == -1) printf("WARNING: Could not execute canplayer. No bg data\n");
+	if(execlp("canplayer", "canplayer", "-I", traffic_log, "-l", "i", can2can, NULL) == -1) {
+		printf("WARNING: Could not execute canplayer. No bg data\n");
+	}
 }
 
 void kill_child() {
@@ -422,7 +424,7 @@ int main(int argc, char *argv[]) {
 	struct canfd_frame frame;
 	int running = 1;
 	int enable_canfd = 1;
-	int play_traffic = 1;
+	int enable_background_traffic = 1;
 	struct stat st;
 	SDL_Event event;
 
@@ -441,7 +443,7 @@ int main(int argc, char *argv[]) {
 				debug = 1;
 				break;
 			case 'X':
-				play_traffic = 0;
+				enable_background_traffic = 0;
 				break;
 			case 'h':
 			case '?':
@@ -521,7 +523,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	if(play_traffic) {
+	if(enable_background_traffic) {
 		play_id = fork();
 		if((int)play_id == -1) {
 			printf("Error: Couldn't fork bg player\n");
