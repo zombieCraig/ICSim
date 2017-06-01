@@ -14,4 +14,4 @@ lib.o:
 	$(CC) lib.c
 
 clean:
-	rm -rf icsim controls icsim.o controls.o
+	rm -rf icsim controls icsim.o controls.o lib.o
