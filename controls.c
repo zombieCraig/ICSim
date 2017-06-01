@@ -18,9 +18,15 @@
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <time.h>
+#include <pthread.h>
+#include <termios.h>
 
+#include "config.h"
+
+#if !(DISABLE_SDL)
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#endif // DISABLE_SDL
 
 #ifndef DATA_DIR
 #define DATA_DIR "./data/"
@@ -47,6 +53,10 @@
 #define OFF 0
 #define DOOR_LOCKED 0
 #define DOOR_UNLOCKED 1
+#define MAX_SPEED 90.0 // Limiter 260.0 is full guage speed
+#define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
+
+#if !(DISABLE_SDL)
 #define SCREEN_WIDTH 835
 #define SCREEN_HEIGHT 608
 #define JOY_UNKNOWN -1
@@ -79,8 +89,6 @@
 #define PS3_X_ROT 4
 #define PS3_Y_ROT 5
 #define PS3_Z_ROT 6 // The rotations are just guessed
-#define MAX_SPEED 90.0 // Limiter 260.0 is full guage speed
-#define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
 #define USB_CONTROLLER 0
 #define PS3_CONTROLLER 1
 
@@ -105,10 +113,12 @@ int gJoyZ = JOY_UNKNOWN;
 //Analog joystick dead zone
 const int JOYSTICK_DEAD_ZONE = 8000;
 int gLastAccelValue = 0; // Non analog R2
+#endif // DISABLE_SDL
 
 int s; // socket
 struct canfd_frame cf;
 char *traffic_log = DEFAULT_CAN_TRAFFIC;
+
 struct ifreq ifr;
 int door_pos = DEFAULT_DOOR_POS;
 int signal_pos = DEFAULT_SIGNAL_POS;
@@ -121,19 +131,25 @@ int difficulty = DEFAULT_DIFFICULTY;
 int lock_enabled = 0;
 int unlock_enabled = 0;
 char door_state = 0xf;
-char signal_state = 0;
 int throttle = 0;
 float current_speed = 0;
 int turning = 0;
 int door_id, signal_id, speed_id;
-int currentTime;
+struct timespec currentTime;
+int current_ms = 0;
 int lastAccel = 0;
 int lastTurnSignal = 0;
+char signal_state = 0;
+int do_lock[4] = {0};
+int do_unlock[4] = {0};
 
 int seed = 0;
 int debug = 0;
-
 int play_pid;
+int text_mode = 0;
+int keyboard_mode = 0;
+
+#if !(DISABLE_SDL)
 int kk = 0;
 char data_file[256];
 SDL_GameController *gGameController = NULL;
@@ -154,6 +170,7 @@ char *get_data(char *fname) {
 	strncat(data_file, fname, 255-strlen(data_file));
 	return data_file;
 }
+#endif // DISABLE_SDL
 
 
 void send_pkt(int mtu) {
@@ -223,7 +240,7 @@ void send_turn_signal() {
 void checkAccel() {
 	float rate = MAX_SPEED / (ACCEL_RATE * 100);
 	// Updated every 10 ms
-	if(currentTime > lastAccel + 10) {
+	if(current_ms > lastAccel + 10) {
 		if(throttle < 0) {
 			current_speed -= rate;
 			if(current_speed < 1) current_speed = 0;
@@ -235,13 +252,13 @@ void checkAccel() {
 			}
 		}
 		send_speed();
-		lastAccel = currentTime;
+		lastAccel = current_ms;
 	}
 }
 
 // Checks if turning and activates the turn signal
 void checkTurn() {
-	if(currentTime > lastTurnSignal + 500) {
+	if(current_ms > lastTurnSignal + 500) {
 		if(turning < 0) {
 			signal_state ^= CAN_LEFT_SIGNAL;
 		} else if(turning > 0) {
@@ -250,10 +267,11 @@ void checkTurn() {
 			signal_state = 0;
 		}
 		send_turn_signal();
-		lastTurnSignal = currentTime;
+		lastTurnSignal = current_ms;
 	}
 }
 
+#if !(DISABLE_SDL)
 // Takes R2 joystick value and converts it to throttle speed
 void accelerate(int value) {
 	// Check dead zones
@@ -332,20 +350,7 @@ void kk_check(int k) {
 	}
 }
 
-// Plays background can traffic
-void play_can_traffic() {
-	char can2can[50];
-	snprintf(can2can, 49, "%s=can0", ifr.ifr_name);
-	if(execlp("canplayer", "canplayer", "-I", traffic_log, "-l", "i", can2can, NULL) == -1) {
-		printf("WARNING: Could not execute canplayer. No bg data\n");
-	}
-}
-
-void kill_child() {
-	kill(play_pid, SIGINT);
-}
-
-void redraw_screen() {
+void redraw_gui() {
 	SDL_RenderCopy(renderer, base_texture, NULL, NULL);
 	SDL_RenderPresent(renderer);
 }
@@ -406,17 +411,139 @@ void print_joy_info() {
 	}
 	map_joy();
 }
+#endif // DISABLE_SDL
+
+void *watch_input(void* arg)
+{
+	int c;
+	struct termios orig_attr;
+	struct termios new_attr;;
+
+	// Set terminal to raw input
+	tcgetattr(fileno(stdin), &orig_attr);
+	memcpy(&new_attr, &orig_attr, sizeof(struct termios));
+	new_attr.c_lflag &= ~(ECHO|ICANON);
+	new_attr.c_cc[VTIME] = 0;
+	new_attr.c_cc[VMIN] = 0;
+	tcsetattr(fileno(stdin), TCSANOW, &new_attr);
+
+	// What's a race condition?
+	while (1) {
+		c = getc(stdin);
+		switch(c) {
+			case 'w':
+				throttle = 1;
+				turning = 0;
+				lock_enabled = 0;
+				unlock_enabled = 0;
+				break;
+			case 'a':
+				throttle = 0;
+				turning = -1;
+				lock_enabled = 0;
+				unlock_enabled = 0;
+				break;
+			case 'd':
+				throttle = 0;
+				turning = 1;
+				lock_enabled = 0;
+				unlock_enabled = 0;
+				break;
+			case 'q':
+				throttle = 0;
+				turning = 0;
+				lock_enabled = 1;
+				unlock_enabled = 0;
+				break;
+			case 'e':
+				throttle = 0;
+				turning = 0;
+				lock_enabled = 0;
+				unlock_enabled = 1;
+				break;
+			case '1':
+				if (lock_enabled) {
+					do_lock[0] = 1;
+				} else if (unlock_enabled) {
+					do_unlock[0] = 1;
+				}
+				break;
+			case '2':
+				if (lock_enabled) {
+					do_lock[1] = 1;
+				} else if (unlock_enabled) {
+					do_unlock[1] = 1;
+				}
+				break;
+			case '3':
+				if (lock_enabled) {
+					do_lock[2] = 1;
+				} else if (unlock_enabled) {
+					do_unlock[2] = 1;
+				}
+				break;
+			case '4':
+				if (lock_enabled) {
+					do_lock[3] = 1;
+				} else if (unlock_enabled) {
+					do_unlock[3] = 1;
+				}
+				break;
+		}
+		usleep(5000);
+	}
+	// TODO: Restore terminal (this isn't reached)
+	tcsetattr(fileno(stdin), TCSANOW, &orig_attr);
+	return NULL;
+}
+void clear_screen()
+{
+	write(STDOUT_FILENO,  "\e[1;1H\e[2J", 10);
+}
+
+void redraw_tui() {
+	clear_screen();
+	printf("Indicator: ");
+	if (turning) {
+		printf("%s\n", turning < 0 ? "LEFT" : "RIGHT");
+	} else {
+		printf("OFF\n");
+	}
+
+	printf("Throttle: %s\n", throttle > 0 ? "ON" : "OFF");
+	printf("Unlock enabled: %s\n", unlock_enabled ? "YES" : "NO");
+	printf("Lock enabled: %s\n", lock_enabled ? "YES" : "NO");
+}
+
+// Plays background can traffic
+void play_can_traffic() {
+	char can2can[50];
+	snprintf(can2can, 49, "%s=can0", ifr.ifr_name);
+	if(execlp("canplayer", "canplayer", "-I", traffic_log, "-l", "i", can2can, NULL) == -1) {
+		printf("WARNING: Could not execute canplayer. No bg data\n");
+	}
+}
+
+void kill_child() {
+	kill(play_pid, SIGINT);
+}
 
 void usage(char *msg) {
 	if(msg) printf("%s\n", msg);
 	printf("Usage: controls [options] <can>\n");
 	printf("\t-s\tseed value from IC\n");
 	printf("\t-l\tdifficulty level. 0-2 (default: %d)\n", DEFAULT_DIFFICULTY);
-	printf("\t-t\ttraffic file to use for bg CAN traffic\n");
-	printf("\t-X\tDisable background CAN traffic.  Cheating if doing RE but needed if playing on a real CANbus\n");
+	printf("\t-T\ttraffic file to use for bg CAN traffic\n");
+	printf("\t-t\ttext mode\n");
+	printf("\t-k\tuse keyboard for input\n");
+	printf("\t-X\tdisable background CAN traffic.  Cheating if doing RE but needed if playing on a real CANbus\n");
 	printf("\t-d\tdebug mode\n");
 	exit(1);
 }
+
+struct ui_t {
+	void (*redraw)(void);
+};
 
 int main(int argc, char *argv[]) {
 	int opt;
@@ -425,9 +552,16 @@ int main(int argc, char *argv[]) {
 	int enable_canfd = 1;
 	int enable_background_traffic = 1;
 	struct stat st;
-	SDL_Event event;
+	struct ui_t ui = {0};
 
-	while ((opt = getopt(argc, argv, "Xdl:s:t:h?")) != -1) {
+#if !(DISABLE_SDL)
+	SDL_Event event;
+	int button, axis; // Used for checking dynamic joystick mappings
+	SDL_Surface *image = NULL;
+	SDL_Window *window = NULL;
+#endif // DISABLE_SDL
+
+	while ((opt = getopt(argc, argv, "Xdl:s:T:tkh?")) != -1) {
 		switch(opt) {
 			case 'l':
 				difficulty = atoi(optarg);
@@ -435,8 +569,14 @@ int main(int argc, char *argv[]) {
 			case 's':
 				seed = atoi(optarg);
 				break;
-			case 't':
+			case 'T':
 				traffic_log = optarg;
+				break;
+			case 't':
+				text_mode = 1;
+				break;
+			case 'k':
+				keyboard_mode = 1;
 				break;
 			case 'd':
 				debug = 1;
@@ -451,6 +591,11 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 	}
+
+#if DISABLE_SDL
+	text_mode = 1;
+	keyboard_mode = 1;
+#endif // DISABLE_SDL
 
 	if (optind >= argc) usage("You must specify at least one can device");
 
@@ -535,243 +680,269 @@ int main(int argc, char *argv[]) {
 		atexit(kill_child);
 	}
 
-	// GUI Setup
-	SDL_Window *window = NULL;
-	SDL_Surface *screenSurface = NULL;
-	if(SDL_Init ( SDL_INIT_VIDEO | SDL_INIT_JOYSTICK ) < 0 ) {
-		printf("SDL Could not initializes\n");
-		exit(40);
-	}
-	if( SDL_NumJoysticks() < 1) {
-		printf(" Warning: No joysticks connected\n");
+	// Input setup
+	if (keyboard_mode) {
+		// Spawn input thread
+		pthread_t input_thread;
+		if(pthread_create(&input_thread, NULL, watch_input, NULL)) {
+			printf("Error: Couldn't create input thread\n");
+		}
 	} else {
-		if(SDL_IsGameController(0)) {
-			gGameController = SDL_GameControllerOpen(0);
-			if(gGameController == NULL) {
-				printf(" Warning: Unable to open game controller. %s\n", SDL_GetError() );
-			} else {
-				gJoystick = SDL_GameControllerGetJoystick(gGameController);
-				gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
-				print_joy_info();
-			}
+#if !(DISABLE_SDL)
+		if(SDL_Init(SDL_INIT_JOYSTICK) < 0 ) {
+			printf("SDL Joystick subsystem could not be initialized\n");
+			exit(40);
+		}
+		if(SDL_NumJoysticks() < 1) {
+			printf(" Warning: No joysticks connected\n");
 		} else {
-			gJoystick = SDL_JoystickOpen(0);
-			if(gJoystick == NULL) {
-				printf(" Warning: Could not open joystick\n");
+			if(SDL_IsGameController(0)) {
+				gGameController = SDL_GameControllerOpen(0);
+				if(gGameController == NULL) {
+					printf(" Warning: Unable to open game controller. %s\n", SDL_GetError() );
+				} else {
+					gJoystick = SDL_GameControllerGetJoystick(gGameController);
+					gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
+					print_joy_info();
+				}
 			} else {
-				gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
-				if (gHaptic == NULL) printf("No Haptic support\n");
-				print_joy_info();
+				gJoystick = SDL_JoystickOpen(0);
+				if(gJoystick == NULL) {
+					printf(" Warning: Could not open joystick\n");
+				} else {
+					gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
+					if (gHaptic == NULL) printf("No Haptic support\n");
+					print_joy_info();
+				}
 			}
 		}
+#endif // DISABLE_SDL
 	}
-	window = SDL_CreateWindow("CANBus Control Panel", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-	if(window == NULL) {
-		printf("Window could not be shown\n");
+
+	// UI Setup
+	if (text_mode) {
+		ui.redraw = redraw_tui;
+	} else {
+#if !(DISABLE_SDL)
+		ui.redraw = redraw_gui;
+		if(SDL_Init(SDL_INIT_VIDEO) < 0 ) {
+			printf("SDL Video subsystem could not be initialized\n");
+			exit(40);
+		}
+		window = SDL_CreateWindow("CANBus Control Panel", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+		if(window == NULL) {
+			printf("Window could not be shown\n");
+		}
+		renderer = SDL_CreateRenderer(window, -1, 0);
+		image = IMG_Load(get_data("joypad.png"));
+		base_texture = SDL_CreateTextureFromSurface(renderer, image);
+#endif // DISABLE_SDL
 	}
-	renderer = SDL_CreateRenderer(window, -1, 0);
-	SDL_Surface *image = IMG_Load(get_data("joypad.png"));
-	base_texture = SDL_CreateTextureFromSurface(renderer, image);
-	SDL_RenderCopy(renderer, base_texture, NULL, NULL);
-	SDL_RenderPresent(renderer);
-	int button, axis; // Used for checking dynamic joystick mappings
+	ui.redraw();
 
 	while(running) {
-		while( SDL_PollEvent(&event) != 0 ) {
-			switch(event.type) {
-				case SDL_QUIT:
-					running = 0;
-					break;
-				case SDL_WINDOWEVENT:
-					switch(event.window.event) {
-						case SDL_WINDOWEVENT_ENTER:
-						case SDL_WINDOWEVENT_RESIZED:
-							redraw_screen();
-							break;
-					}
-				case SDL_KEYDOWN:
-					switch(event.key.keysym.sym) {
-						case SDLK_UP:
-							throttle = 1;
-							break;
-						case SDLK_LEFT:
-							turning = -1;
-							break;
-						case SDLK_RIGHT:
-							turning = 1;
-							break;
-						case SDLK_LSHIFT:
+#if !(DISABLE_SDL)
+		if (!keyboard_mode || !text_mode) {
+			while(SDL_PollEvent(&event) != 0 ) {
+				switch(event.type) {
+					case SDL_QUIT:
+						running = 0;
+						break;
+					case SDL_WINDOWEVENT:
+						switch(event.window.event) {
+							case SDL_WINDOWEVENT_ENTER:
+							case SDL_WINDOWEVENT_RESIZED:
+								ui.redraw();
+								break;
+						}
+					case SDL_KEYDOWN:
+						switch(event.key.keysym.sym) {
+							case SDLK_UP:
+								throttle = 1;
+								break;
+							case SDLK_LEFT:
+								turning = -1;
+								break;
+							case SDLK_RIGHT:
+								turning = 1;
+								break;
+							case SDLK_LSHIFT:
+								lock_enabled = 1;
+								if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+								break;
+							case SDLK_RSHIFT:
+								unlock_enabled = 1;
+								if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+								break;
+							case SDLK_a:
+								if(lock_enabled) {
+									send_lock(CAN_DOOR1_LOCK);
+								} else if(unlock_enabled) {
+									send_unlock(CAN_DOOR1_LOCK);
+								}
+								break;
+							case SDLK_b:
+								if(lock_enabled) {
+									send_lock(CAN_DOOR2_LOCK);
+								} else if(unlock_enabled) {
+									send_unlock(CAN_DOOR2_LOCK);
+								}
+								break;
+							case SDLK_x:
+								if(lock_enabled) {
+									send_lock(CAN_DOOR3_LOCK);
+								} else if(unlock_enabled) {
+									send_unlock(CAN_DOOR3_LOCK);
+								}
+								break;
+							case SDLK_y:
+								if(lock_enabled) {
+									send_lock(CAN_DOOR4_LOCK);
+								} else if(unlock_enabled) {
+									send_unlock(CAN_DOOR4_LOCK);
+								}
+								break;
+						}
+						kk_check(event.key.keysym.sym);
+						break;
+					case SDL_KEYUP:
+						switch(event.key.keysym.sym) {
+							case SDLK_UP:
+								throttle = -1;
+								break;
+							case SDLK_LEFT:
+							case SDLK_RIGHT:
+								turning = 0;
+								break;
+							case SDLK_LSHIFT:
+								lock_enabled = 0;
+								break;
+							case SDLK_RSHIFT:
+								unlock_enabled = 0;
+								break;
+						}
+						break;
+					case SDL_JOYAXISMOTION:
+						axis = event.jaxis.axis;
+						if(axis == gAxisLeftH) {
+							ud(event.jaxis.value);
+						} else if(axis == gAxisLeftV) {
+							turn(event.jaxis.value);
+						} else if(axis == gAxisR2) {
+							accelerate(event.jaxis.value);
+						} else if(axis == gAxisRightH ||
+								axis == gAxisRightV ||
+								axis == gAxisL2 ||
+								axis == gJoyX ||
+								axis == gJoyY ||
+								axis == gJoyZ) {
+							// Do nothing, the axis is known just not connected
+						} else {
+							if (debug) printf("Unkown axis: %d\n", event.jaxis.axis);
+						}
+						break;
+					case SDL_JOYBUTTONDOWN:
+						button = event.jbutton.button;
+						if(button == gButtonLock) {
 							lock_enabled = 1;
 							if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-							break;
-						case SDLK_RSHIFT:
+						} else if(button == gButtonUnlock) {
 							unlock_enabled = 1;
 							if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-							break;
-						case SDLK_a:
+						} else if(button == gButtonA) {
 							if(lock_enabled) {
 								send_lock(CAN_DOOR1_LOCK);
 							} else if(unlock_enabled) {
 								send_unlock(CAN_DOOR1_LOCK);
 							}
-							break;
-						case SDLK_b:
+							kk_check(SDLK_a);
+						} else if (button == gButtonB) {
 							if(lock_enabled) {
 								send_lock(CAN_DOOR2_LOCK);
 							} else if(unlock_enabled) {
 								send_unlock(CAN_DOOR2_LOCK);
 							}
-							break;
-						case SDLK_x:
+							kk_check(SDLK_b);
+						} else if (button == gButtonX) {
 							if(lock_enabled) {
 								send_lock(CAN_DOOR3_LOCK);
 							} else if(unlock_enabled) {
 								send_unlock(CAN_DOOR3_LOCK);
 							}
-							break;
-						case SDLK_y:
+							kk_check(SDLK_x);
+						} else if (button == gButtonY) {
 							if(lock_enabled) {
 								send_lock(CAN_DOOR4_LOCK);
 							} else if(unlock_enabled) {
 								send_unlock(CAN_DOOR4_LOCK);
 							}
-							break;
-					}
-					kk_check(event.key.keysym.sym);
-					break;
-				case SDL_KEYUP:
-					switch(event.key.keysym.sym) {
-						case SDLK_UP:
-							throttle = -1;
-							break;
-						case SDLK_LEFT:
-						case SDLK_RIGHT:
-							turning = 0;
-							break;
-						case SDLK_LSHIFT:
+							kk_check(SDLK_y);
+						} else if (button == gButtonStart) {
+							kk_check(SDLK_RETURN);
+						} else {
+							if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
+						}
+						break;
+					case SDL_JOYBUTTONUP:
+						button = event.jbutton.button;
+						if(button == gButtonLock) {
 							lock_enabled = 0;
-							break;
-						case SDLK_RSHIFT:
+						} else if(button == gButtonUnlock) {
 							unlock_enabled = 0;
-							break;
-					}
-					break;
-				case SDL_JOYAXISMOTION:
-					axis = event.jaxis.axis;
-					if(axis == gAxisLeftH) {
-						ud(event.jaxis.value);
-					} else if(axis == gAxisLeftV) {
-						turn(event.jaxis.value);
-					} else if(axis == gAxisR2) {
-						accelerate(event.jaxis.value);
-					} else if(axis == gAxisRightH ||
-							axis == gAxisRightV ||
-							axis == gAxisL2 ||
-							axis == gJoyX ||
-							axis == gJoyY ||
-							axis == gJoyZ) {
-						// Do nothing, the axis is known just not connected
-					} else {
-						if (debug) printf("Unkown axis: %d\n", event.jaxis.axis);
-					}
-					break;
-				case SDL_JOYBUTTONDOWN:
-					button = event.jbutton.button;
-					if(button == gButtonLock) {
-						lock_enabled = 1;
-						if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-					} else if(button == gButtonUnlock) {
-						unlock_enabled = 1;
-						if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
-					} else if(button == gButtonA) {
-						if(lock_enabled) {
-							send_lock(CAN_DOOR1_LOCK);
-						} else if(unlock_enabled) {
-							send_unlock(CAN_DOOR1_LOCK);
+						} else {
+							//if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
 						}
-						kk_check(SDLK_a);
-					} else if (button == gButtonB) {
-						if(lock_enabled) {
-							send_lock(CAN_DOOR2_LOCK);
-						} else if(unlock_enabled) {
-							send_unlock(CAN_DOOR2_LOCK);
+						break;
+					case SDL_JOYDEVICEADDED:
+						// Only use the first controller
+						if(event.cdevice.which == 0) {
+							gJoystick = SDL_JoystickOpen(0);
+							if(gJoystick) {
+								print_joy_info();
+							}
 						}
-						kk_check(SDLK_b);
-					} else if (button == gButtonX) {
-						if(lock_enabled) {
-							send_lock(CAN_DOOR3_LOCK);
-						} else if(unlock_enabled) {
-							send_unlock(CAN_DOOR3_LOCK);
+						break;
+					case SDL_JOYDEVICEREMOVED:
+						if(event.cdevice.which == 0) {
+							SDL_JoystickClose(gJoystick);
+							gJoystick = NULL;
 						}
-						kk_check(SDLK_x);
-					} else if (button == gButtonY) {
-						if(lock_enabled) {
-							send_lock(CAN_DOOR4_LOCK);
-						} else if(unlock_enabled) {
-							send_unlock(CAN_DOOR4_LOCK);
-						}
-						kk_check(SDLK_y);
-					} else if (button == gButtonStart) {
-						kk_check(SDLK_RETURN);
-					} else {
-						if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
-					}
-					break;
-				case SDL_JOYBUTTONUP:
-					button = event.jbutton.button;
-					if(button == gButtonLock) {
-						lock_enabled = 0;
-					} else if(button == gButtonUnlock) {
-						unlock_enabled = 0;
-					} else {
-						//if(debug) printf("Unassigned button: %d\n", event.jbutton.button);
-					}
-					break;
-				case SDL_JOYDEVICEADDED:
-					// Only use the first controller
-					if(event.cdevice.which == 0) {
-						gJoystick = SDL_JoystickOpen(0);
-						if(gJoystick) {
-							gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
+						break;
+					case SDL_CONTROLLERDEVICEADDED:
+						// Only use the first controller
+						if(gGameController == NULL) {
+							gGameController = SDL_GameControllerOpen(0);
+							gJoystick = SDL_GameControllerGetJoystick(gGameController);
 							print_joy_info();
 						}
-					}
-					break;
-				case SDL_JOYDEVICEREMOVED:
-					if(event.cdevice.which == 0) {
-						SDL_JoystickClose(gJoystick);
-						gJoystick = NULL;
-					}
-					break;
-				case SDL_CONTROLLERDEVICEADDED:
-					// Only use the first controller
-					if(gGameController == NULL) {
-						gGameController = SDL_GameControllerOpen(0);
-						gJoystick = SDL_GameControllerGetJoystick(gGameController);
-						gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
-						print_joy_info();
-					}
-					break;
-				case SDL_CONTROLLERDEVICEREMOVED:
-					if(event.cdevice.which == 0) {
-						SDL_GameControllerClose(gGameController);
-						gGameController = NULL;
-					}
-					break;
+						break;
+					case SDL_CONTROLLERDEVICEREMOVED:
+						if(event.cdevice.which == 0) {
+							SDL_GameControllerClose(gGameController);
+							gGameController = NULL;
+						}
+						break;
+				}
 			}
 		}
-		currentTime = SDL_GetTicks();
+#endif // DISABLE_SDL
+		clock_gettime(CLOCK_MONOTONIC, &currentTime);
+		current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
 		checkAccel();
 		checkTurn();
-		SDL_Delay(5);
+		ui.redraw();
+		usleep(5000);
 	}
 
 	close(s);
-	SDL_DestroyTexture(base_texture);
-	SDL_FreeSurface(image);
-	SDL_GameControllerClose(gGameController);
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
-	SDL_Quit();
-
+#if !(DISABLE_SDL)
+	if (!keyboard_mode || !text_mode) {
+		SDL_DestroyTexture(base_texture);
+		SDL_FreeSurface(image);
+		SDL_GameControllerClose(gGameController);
+		SDL_DestroyRenderer(renderer);
+		SDL_DestroyWindow(window);
+		SDL_Quit();
+	}
+#endif // DISABLE_SDL
 }

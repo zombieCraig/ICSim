@@ -17,17 +17,18 @@
 #include <linux/can/raw.h>
 #include <time.h>
 
+#include "lib.h"
+#include "config.h"
+
+#if !(DISABLE_SDL)
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-
-#include "lib.h"
+#endif // !DISABLE_SDL
 
 #ifndef DATA_DIR
 #define DATA_DIR "./data/"  // Needs trailing slash
 #endif
 
-#define SCREEN_WIDTH 692
-#define SCREEN_HEIGHT 329
 #define DOOR_LOCKED 0
 #define DOOR_UNLOCKED 1
 #define OFF 0
@@ -45,22 +46,28 @@
 #define DEFAULT_SPEED_ID 580 // 0x244
 #define DEFAULT_SPEED_BYTE 3 // bytes 3,4
 
-const int canfd_on = 1;
-int debug = 0;
-int randomize = 0;
-int seed = 0;
-int door_pos = DEFAULT_DOOR_BYTE;
-int signal_pos = DEFAULT_SIGNAL_BYTE;
-int speed_pos = DEFAULT_SPEED_BYTE;
-long current_speed = 0;
-int door_status[4];
-int turn_status[2];
-char data_file[256];
+#if !(DISABLE_SDL)
+#define SCREEN_WIDTH 692
+#define SCREEN_HEIGHT 329
 SDL_Renderer *renderer = NULL;
 SDL_Texture *base_texture = NULL;
 SDL_Texture *needle_tex = NULL;
 SDL_Texture *sprite_tex = NULL;
 SDL_Rect speed_rect;
+#endif // !DISABLE_SDL
+
+const int canfd_on = 1;
+int debug = 0;
+int randomize = 0;
+int seed = 0;
+int text_mode = 0;
+long current_speed = 0;
+int door_status[4];
+int turn_status[2];
+char data_file[256];
+int door_pos = DEFAULT_DOOR_BYTE;
+int signal_pos = DEFAULT_SIGNAL_BYTE;
+int speed_pos = DEFAULT_SPEED_BYTE;
 
 // Simple map function
 long map(long x, long in_min, long in_max, long out_min, long out_max)
@@ -88,6 +95,7 @@ void init_car_state() {
 	turn_status[1] = OFF;
 }
 
+#if !(DISABLE_SDL)
 /* Empty IC */
 void blank_ic() {
 	SDL_RenderCopy(renderer, base_texture, NULL, NULL);
@@ -211,19 +219,54 @@ void update_turn_signals() {
 		SDL_RenderCopy(renderer, sprite_tex, &right, &rpos);
 	}
 }
+#endif // !DISABLE_SDL
 
+
+void clear_screen()
+{
+	write(STDOUT_FILENO,  "\e[1;1H\e[2J", 10);
+}
+
+void draw_tui_doors()
+{
+	for(int i = 0; i < (sizeof(door_status) / sizeof(*door_status)); i++) {
+		printf("Door %d: %s\n", i, door_status[i] == DOOR_LOCKED ? "LOCKED" : "UNLOCKED");
+	}
+}
+
+void draw_tui_speed()
+{
+	printf("Speed: %ld km/h\n", current_speed);
+}
+
+void draw_tui_turn_signals()
+{
+	printf("Left indicator: %s\n", turn_status[0] == OFF ? "OFF" : "ON");
+	printf("Right indicator: %s\n", turn_status[1] == OFF ? "OFF" : "ON");
+}
+
+void redraw_tui() {
+	clear_screen();
+	draw_tui_doors();
+	draw_tui_speed();
+	draw_tui_turn_signals();
+}
+
+
+#if !(DISABLE_SDL)
 /* Redraws the IC updating everything
  * Slowest way to go.  Should only use on init
  */
-void redraw_ic() {
+void redraw_gui() {
 	blank_ic();
 	update_speed();
 	update_doors();
 	update_turn_signals();
 	SDL_RenderPresent(renderer);
 }
+#endif // !DISABLE_SDL
 
-/* Parses CAN fram and updates current_speed */
+/* Parses CAN frame and updates current_speed */
 void update_speed_status(struct canfd_frame *cf, int maxdlen) {
 	int len = (cf->len > maxdlen) ? maxdlen : cf->len;
 	if(len < speed_pos + 1) return;
@@ -231,8 +274,6 @@ void update_speed_status(struct canfd_frame *cf, int maxdlen) {
 	speed += cf->data[speed_pos + 1];
 	speed = speed / 100; // speed in kilometers
 	current_speed = speed * 0.6213751; // mph
-	update_speed();
-	SDL_RenderPresent(renderer);
 }
 
 /* Parses CAN frame and updates turn signal status */
@@ -249,8 +290,6 @@ void update_signal_status(struct canfd_frame *cf, int maxdlen) {
 	} else {
 		turn_status[1] = OFF;
 	}
-	update_turn_signals();
-	SDL_RenderPresent(renderer);
 }
 
 /* Parses CAN frame and updates door status */
@@ -277,8 +316,6 @@ void update_door_status(struct canfd_frame *cf, int maxdlen) {
 	} else {
 		door_status[3] = DOOR_UNLOCKED;
 	}
-	update_doors();
-	SDL_RenderPresent(renderer);
 }
 
 void Usage(char *msg) {
@@ -287,8 +324,13 @@ void Usage(char *msg) {
 	printf("\t-r\trandomize IDs\n");
 	printf("\t-s\tseed value\n");
 	printf("\t-d\tdebug mode\n");
+	printf("\t-t\ttext mode\n");
 	exit(1);
 }
+
+struct ui_t {
+	void (*redraw)(void);
+};
 
 int main(int argc, char *argv[]) {
 	int opt;
@@ -305,9 +347,16 @@ int main(int argc, char *argv[]) {
 	int nbytes, maxdlen;
 	int seed = 0;
 	int door_id, signal_id, speed_id;
+	struct ui_t ui = {0};
+#if !(DISABLE_SDL)
 	SDL_Event event;
+	SDL_Window *window = NULL;
+	SDL_Surface *image = NULL;
+	SDL_Surface *needle = NULL;
+	SDL_Surface *sprites = NULL;
+#endif // !DISABLE_SDL
 
-	while ((opt = getopt(argc, argv, "rs:dh?")) != -1) {
+	while ((opt = getopt(argc, argv, "rs:dth?")) != -1) {
 		switch(opt) {
 			case 'r':
 				randomize = 1;
@@ -318,6 +367,9 @@ int main(int argc, char *argv[]) {
 			case 'd':
 				debug = 1;
 				break;
+			case 't':
+				text_mode = 1;
+				break;
 			case 'h':
 			case '?':
 			default:
@@ -325,6 +377,10 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 	}
+
+#if (DISABLE_SDL)
+	text_mode = 1;
+#endif // !DISABLE_SDL
 
 	if (optind >= argc) Usage("You must specify at least one can device");
 
@@ -388,33 +444,41 @@ int main(int argc, char *argv[]) {
 		fclose(fdseed);
 	}
 
-	SDL_Window *window = NULL;
-	if(SDL_Init ( SDL_INIT_VIDEO ) < 0 ) {
-		printf("SDL Could not initializes\n");
-		exit(40);
-	}
-	window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN); // | SDL_WINDOW_RESIZABLE);
-	if(window == NULL) {
-		printf("Window could not be shown\n");
-	}
-	renderer = SDL_CreateRenderer(window, -1, 0);
-	SDL_Surface *image = IMG_Load(get_data("ic.png"));
-	SDL_Surface *needle = IMG_Load(get_data("needle.png"));
-	SDL_Surface *sprites = IMG_Load(get_data("spritesheet.png"));
-	base_texture = SDL_CreateTextureFromSurface(renderer, image);
-	needle_tex = SDL_CreateTextureFromSurface(renderer, needle);
-	sprite_tex = SDL_CreateTextureFromSurface(renderer, sprites);
+	if (text_mode) {
+		ui.redraw = redraw_tui;
+	} else {
+#if !(DISABLE_SDL)
+		ui.redraw = redraw_gui;
 
-	speed_rect.x = 212;
-	speed_rect.y = 175;
-	speed_rect.h = needle->h;
-	speed_rect.w = needle->w;
+		if(SDL_Init ( SDL_INIT_VIDEO ) < 0 ) {
+			printf("SDL Could not initialize\n");
+			exit(40);
+		}
+		window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN); // | SDL_WINDOW_RESIZABLE);
+		if(window == NULL) {
+			printf("Window could not be created\n");
+		}
+		renderer = SDL_CreateRenderer(window, -1, 0);
+		image = IMG_Load(get_data("ic.png"));
+		needle = IMG_Load(get_data("needle.png"));
+		sprites = IMG_Load(get_data("spritesheet.png"));
+		base_texture = SDL_CreateTextureFromSurface(renderer, image);
+		needle_tex = SDL_CreateTextureFromSurface(renderer, needle);
+		sprite_tex = SDL_CreateTextureFromSurface(renderer, sprites);
+
+		speed_rect.x = 212;
+		speed_rect.y = 175;
+		speed_rect.h = needle->h;
+		speed_rect.w = needle->w;
+#endif // !DISABLE_SDL
+	}
 
 	// Draw the IC
-	redraw_ic();
+	ui.redraw();
 
 	/* For now we will just operate on one CAN interface */
 	while(running) {
+#if !(DISABLE_SDL)
 		while( SDL_PollEvent(&event) != 0 ) {
 			switch(event.type) {
 				case SDL_QUIT:
@@ -424,12 +488,13 @@ int main(int argc, char *argv[]) {
 					switch(event.window.event) {
 						case SDL_WINDOWEVENT_ENTER:
 						case SDL_WINDOWEVENT_RESIZED:
-							redraw_ic();
+							ui.redraw();
 							break;
 					}
 			}
 			SDL_Delay(3);
 		}
+#endif // !DISABLE_SDL
 
 		nbytes = recvmsg(can, &msg, 0);
 		if (nbytes < 0) {
@@ -454,8 +519,13 @@ int main(int argc, char *argv[]) {
 		if(frame.can_id == door_id) update_door_status(&frame, maxdlen);
 		if(frame.can_id == signal_id) update_signal_status(&frame, maxdlen);
 		if(frame.can_id == speed_id) update_speed_status(&frame, maxdlen);
+
+		usleep(5000);
+		ui.redraw();
+
 	}
 
+#if !(DISABLE_SDL)
 	SDL_DestroyTexture(base_texture);
 	SDL_DestroyTexture(needle_tex);
 	SDL_DestroyTexture(sprite_tex);
@@ -466,6 +536,7 @@ int main(int argc, char *argv[]) {
 	SDL_DestroyWindow(window);
 	IMG_Quit();
 	SDL_Quit();
+#endif // !DISABLE_SDL
 
 	return 0;
 }
