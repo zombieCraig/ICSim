@@ -17,6 +17,8 @@
 #include <net/if.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <time.h>
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 
