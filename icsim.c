@@ -299,13 +299,10 @@ int main(int argc, char *argv[]) {
 	struct iovec iov;
 	struct msghdr msg;
 	struct cmsghdr *cmsg;
-	struct timeval tv, timeout_config = { 0, 0 };
 	struct stat dirstat;
-	fd_set rdfs;
 	char ctrlmsg[CMSG_SPACE(sizeof(struct timeval)) + CMSG_SPACE(sizeof(__u32))];
 	int running = 1;
 	int nbytes, maxdlen;
-	int ret;
 	int seed = 0;
 	int door_id, signal_id, speed_id;
 	SDL_Event event;
@@ -392,7 +389,6 @@ int main(int argc, char *argv[]) {
 	}
 
 	SDL_Window *window = NULL;
-	SDL_Surface *screenSurface = NULL;
 	if(SDL_Init ( SDL_INIT_VIDEO ) < 0 ) {
 		printf("SDL Could not initializes\n");
 		exit(40);
@@ -451,10 +447,7 @@ int main(int argc, char *argv[]) {
 		for (cmsg = CMSG_FIRSTHDR(&msg);
 				cmsg && (cmsg->cmsg_level == SOL_SOCKET);
 				cmsg = CMSG_NXTHDR(&msg,cmsg)) {
-			if (cmsg->cmsg_type == SO_TIMESTAMP)
-				tv = *(struct timeval *)CMSG_DATA(cmsg);
-			else if (cmsg->cmsg_type == SO_RXQ_OVFL)
-				//dropcnt[i] = *(__u32 *)CMSG_DATA(cmsg);
+			if (cmsg->cmsg_type == SO_RXQ_OVFL)
 				fprintf(stderr, "Dropped packet\n");
 		}
 		// if(debug) fprint_canframe(stdout, &frame, "\n", 0, maxdlen);

@@ -328,7 +328,7 @@ void kk_check(int k) {
 			kk = kk == 8 ? kk+1 : 0;
 			break;
 		default:
-			kk == 0;
+			kk = 0;
 	}
 }
 
@@ -421,7 +421,6 @@ void usage(char *msg) {
 int main(int argc, char *argv[]) {
 	int opt;
 	struct sockaddr_can addr;
-	struct canfd_frame frame;
 	int running = 1;
 	int enable_canfd = 1;
 	int enable_background_traffic = 1;
