@@ -133,7 +133,7 @@ int lastTurnSignal = 0;
 int seed = 0;
 int debug = 0;
 
-int play_id;
+int play_pid;
 int kk = 0;
 char data_file[256];
 SDL_GameController *gGameController = NULL;
@@ -342,7 +342,7 @@ void play_can_traffic() {
 }
 
 void kill_child() {
-	kill(play_id, SIGINT);
+	kill(play_pid, SIGINT);
 }
 
 void redraw_screen() {
@@ -523,11 +523,11 @@ int main(int argc, char *argv[]) {
 	}
 
 	if(enable_background_traffic) {
-		play_id = fork();
-		if((int)play_id == -1) {
+		play_pid = fork();
+		if((int)play_pid == -1) {
 			printf("Error: Couldn't fork bg player\n");
 			exit(-1);
-		} else if (play_id == 0) {
+		} else if (play_pid == 0) {
 			play_can_traffic();
 			// Shouldn't return
 			exit(0);
