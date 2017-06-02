@@ -337,8 +337,8 @@ void play_can_traffic() {
 	if(execlp("canplayer", "canplayer", "-I", traffic_log, "-l", "i", can2can, NULL) == -1) printf("WARNING: Could not execute canplayer. No bg data\n");
 }
 
-void kill_child(int sig) {
-	kill(play_id, SIGKILL);
+void kill_child() {
+	kill(play_id, SIGINT);
 }
 
 void redraw_screen() {
@@ -520,14 +520,16 @@ int main(int argc, char *argv[]) {
   }
 
   if(play_traffic) {
-	signal(SIGALRM,(void (*)(int))kill_child);
 	play_id = fork();
 	if((int)play_id == -1) {
 		printf("Error: Couldn't fork bg player\n");
 		exit(-1);
-	} else if (play_id != 0) {
+	} else if (play_id == 0) {
 		play_can_traffic();
+		// Shouldn't return
+		exit(0);
 	}
+	atexit(kill_child);
   }
 
   // GUI Setup
@@ -761,7 +763,6 @@ int main(int argc, char *argv[]) {
     SDL_Delay(5);
   }
 
-  kill_child(SIGKILL);
   close(s);
   SDL_DestroyTexture(base_texture);
   SDL_FreeSurface(image);
