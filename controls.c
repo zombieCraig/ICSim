@@ -272,8 +272,10 @@ void check_turn() {
 	if(current_ms > lastTurnSignal + 500) {
 		if(turning < 0) {
 			signal_state ^= CAN_LEFT_SIGNAL;
+			signal_state &= ~CAN_RIGHT_SIGNAL;
 		} else if(turning > 0) {
 			signal_state ^= CAN_RIGHT_SIGNAL;
+			signal_state &= ~CAN_LEFT_SIGNAL;
 		} else {
 			signal_state = 0;
 		}
@@ -444,31 +446,24 @@ void *watch_input(void* arg)
 		switch(c) {
 			case 'w':
 				throttle = 1;
-				turning = 0;
-				lock_enabled = 0;
-				unlock_enabled = 0;
 				break;
 			case 'a':
-				throttle = 0;
 				turning = -1;
-				lock_enabled = 0;
-				unlock_enabled = 0;
+				break;
+			case 's':
+				throttle = -1;
 				break;
 			case 'd':
-				throttle = 0;
 				turning = 1;
-				lock_enabled = 0;
-				unlock_enabled = 0;
+				break;
+			case ' ':
+				turning = 0;
 				break;
 			case 'q':
-				throttle = 0;
-				turning = 0;
 				lock_enabled = 1;
 				unlock_enabled = 0;
 				break;
 			case 'e':
-				throttle = 0;
-				turning = 0;
 				lock_enabled = 0;
 				unlock_enabled = 1;
 				break;
