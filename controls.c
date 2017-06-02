@@ -209,6 +209,19 @@ void send_unlock(char door) {
 	send_pkt(CAN_MTU);
 }
 
+void check_locks() {
+	for (int i = 0; i < 4; i++) {
+		if (do_lock[i] == 1) {
+			send_lock(1 << i);
+			do_lock[i] = 0;
+		}
+		if (do_unlock[i] == 1) {
+			send_unlock(1 << i);
+			do_unlock[i] = 0;
+		}
+	}
+}
+
 void send_speed() {
 	int kph = (int)current_speed * 100;
 	memset(&cf, 0, sizeof(cf));
@@ -236,7 +249,7 @@ void send_turn_signal() {
 }
 
 // Checks throttle to see if we should accelerate or decelerate the vehicle
-void checkAccel() {
+void check_accel() {
 	float rate = MAX_SPEED / (ACCEL_RATE * 100);
 	// Updated every 10 ms
 	if(current_ms > lastAccel + 10) {
@@ -255,7 +268,7 @@ void checkAccel() {
 }
 
 // Checks if turning and activates the turn signal
-void checkTurn() {
+void check_turn() {
 	if(current_ms > lastTurnSignal + 500) {
 		if(turning < 0) {
 			signal_state ^= CAN_LEFT_SIGNAL;
@@ -763,38 +776,46 @@ int main(int argc, char *argv[]) {
 								break;
 							case SDLK_LSHIFT:
 								lock_enabled = 1;
-								if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+								if(unlock_enabled)
+									do_unlock[0] = 1;
+									do_unlock[1] = 1;
+									do_unlock[3] = 1;
+									do_unlock[4] = 1;
 								break;
 							case SDLK_RSHIFT:
 								unlock_enabled = 1;
-								if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+								if(lock_enabled)
+									do_lock[0] = 1;
+									do_lock[1] = 1;
+									do_lock[3] = 1;
+									do_lock[4] = 1;
 								break;
 							case SDLK_a:
 								if(lock_enabled) {
-									send_lock(CAN_DOOR1_LOCK);
+									do_lock[0] = 1;
 								} else if(unlock_enabled) {
-									send_unlock(CAN_DOOR1_LOCK);
+									do_unlock[0] = 1;
 								}
 								break;
 							case SDLK_b:
 								if(lock_enabled) {
-									send_lock(CAN_DOOR2_LOCK);
+									do_lock[1] = 1;
 								} else if(unlock_enabled) {
-									send_unlock(CAN_DOOR2_LOCK);
+									do_unlock[1] = 1;
 								}
 								break;
 							case SDLK_x:
 								if(lock_enabled) {
-									send_lock(CAN_DOOR3_LOCK);
+									do_lock[2] = 1;
 								} else if(unlock_enabled) {
-									send_unlock(CAN_DOOR3_LOCK);
+									do_unlock[2] = 1;
 								}
 								break;
 							case SDLK_y:
 								if(lock_enabled) {
-									send_lock(CAN_DOOR4_LOCK);
+									do_lock[3] = 1;
 								} else if(unlock_enabled) {
-									send_unlock(CAN_DOOR4_LOCK);
+									do_unlock[3] = 1;
 								}
 								break;
 						}
@@ -840,36 +861,44 @@ int main(int argc, char *argv[]) {
 						button = event.jbutton.button;
 						if(button == gButtonLock) {
 							lock_enabled = 1;
-							if(unlock_enabled) send_lock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+							if(unlock_enabled)
+								do_unlock[0] = 1;
+								do_unlock[1] = 1;
+								do_unlock[3] = 1;
+								do_unlock[4] = 1;
 						} else if(button == gButtonUnlock) {
 							unlock_enabled = 1;
-							if(lock_enabled) send_unlock(CAN_DOOR1_LOCK | CAN_DOOR2_LOCK | CAN_DOOR3_LOCK | CAN_DOOR4_LOCK);
+							if(lock_enabled)
+								do_lock[0] = 1;
+								do_lock[1] = 1;
+								do_lock[3] = 1;
+								do_lock[4] = 1;
 						} else if(button == gButtonA) {
 							if(lock_enabled) {
-								send_lock(CAN_DOOR1_LOCK);
+								do_lock[0] = 1;
 							} else if(unlock_enabled) {
-								send_unlock(CAN_DOOR1_LOCK);
+								do_unlock[0] = 1;
 							}
 							kk_check(SDLK_a);
 						} else if (button == gButtonB) {
 							if(lock_enabled) {
-								send_lock(CAN_DOOR2_LOCK);
+								do_lock[1] = 1;
 							} else if(unlock_enabled) {
-								send_unlock(CAN_DOOR2_LOCK);
+								do_unlock[2] = 1;
 							}
 							kk_check(SDLK_b);
 						} else if (button == gButtonX) {
 							if(lock_enabled) {
-								send_lock(CAN_DOOR3_LOCK);
+								do_lock[2] = 1;
 							} else if(unlock_enabled) {
-								send_unlock(CAN_DOOR3_LOCK);
+								do_unlock[2] = 1;
 							}
 							kk_check(SDLK_x);
 						} else if (button == gButtonY) {
 							if(lock_enabled) {
-								send_lock(CAN_DOOR4_LOCK);
+								do_lock[3] = 1;
 							} else if(unlock_enabled) {
-								send_unlock(CAN_DOOR4_LOCK);
+								do_unlock[3] = 1;
 							}
 							kk_check(SDLK_y);
 						} else if (button == gButtonStart) {
@@ -922,8 +951,9 @@ int main(int argc, char *argv[]) {
 #endif // DISABLE_SDL
 			clock_gettime(CLOCK_MONOTONIC, &currentTime);
 			current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
-			checkAccel();
-			checkTurn();
+			check_accel();
+			check_turn();
+			check_locks();
 			ui.redraw();
 			usleep(5000);
 		}
