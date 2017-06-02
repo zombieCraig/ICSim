@@ -154,7 +154,6 @@ int kk = 0;
 char data_file[256];
 SDL_GameController *gGameController = NULL;
 SDL_Joystick *gJoystick = NULL;
-SDL_Haptic *gHaptic = NULL;
 SDL_Renderer *renderer = NULL;
 SDL_Texture *base_texture = NULL;
 int gControllerType = USB_CONTROLLER;
@@ -248,7 +247,6 @@ void checkAccel() {
 			current_speed += rate;
 			if(current_speed > MAX_SPEED) { // Limiter
 				current_speed = MAX_SPEED;
-				if(gHaptic != NULL) {SDL_HapticRumblePlay( gHaptic, 0.5, 1000); printf("DEBUG HAPTIC\n"); }
 			}
 		}
 		send_speed();
@@ -702,7 +700,6 @@ int main(int argc, char *argv[]) {
 					printf(" Warning: Unable to open game controller. %s\n", SDL_GetError() );
 				} else {
 					gJoystick = SDL_GameControllerGetJoystick(gGameController);
-					gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
 					print_joy_info();
 				}
 			} else {
@@ -710,8 +707,6 @@ int main(int argc, char *argv[]) {
 				if(gJoystick == NULL) {
 					printf(" Warning: Could not open joystick\n");
 				} else {
-					gHaptic = SDL_HapticOpenFromJoystick(gJoystick);
-					if (gHaptic == NULL) printf("No Haptic support\n");
 					print_joy_info();
 				}
 			}
@@ -924,25 +919,25 @@ int main(int argc, char *argv[]) {
 						break;
 				}
 			}
+#endif // DISABLE_SDL
+			clock_gettime(CLOCK_MONOTONIC, &currentTime);
+			current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
+			checkAccel();
+			checkTurn();
+			ui.redraw();
+			usleep(5000);
+		}
+
+		close(s);
+#if !(DISABLE_SDL)
+		if (!keyboard_mode || !text_mode) {
+			SDL_DestroyTexture(base_texture);
+			SDL_FreeSurface(image);
+			SDL_GameControllerClose(gGameController);
+			SDL_DestroyRenderer(renderer);
+			SDL_DestroyWindow(window);
+			SDL_Quit();
 		}
 #endif // DISABLE_SDL
-		clock_gettime(CLOCK_MONOTONIC, &currentTime);
-		current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
-		checkAccel();
-		checkTurn();
-		ui.redraw();
-		usleep(5000);
 	}
-
-	close(s);
-#if !(DISABLE_SDL)
-	if (!keyboard_mode || !text_mode) {
-		SDL_DestroyTexture(base_texture);
-		SDL_FreeSurface(image);
-		SDL_GameControllerClose(gGameController);
-		SDL_DestroyRenderer(renderer);
-		SDL_DestroyWindow(window);
-		SDL_Quit();
-	}
-#endif // DISABLE_SDL
 }
