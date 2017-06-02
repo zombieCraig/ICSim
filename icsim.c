@@ -236,7 +236,7 @@ void draw_tui_doors()
 
 void draw_tui_speed()
 {
-	printf("Speed: %ld km/h\n", current_speed);
+	printf("Speed: %ld mph\n", current_speed);
 }
 
 void draw_tui_turn_signals()

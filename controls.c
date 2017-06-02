@@ -53,7 +53,7 @@
 #define OFF 0
 #define DOOR_LOCKED 0
 #define DOOR_UNLOCKED 1
-#define MAX_SPEED 90.0 // Limiter 260.0 is full guage speed
+#define MAX_SPEED 150.0 // Limiter 260.0 is full gauge speed
 #define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
 
 #if !(DISABLE_SDL)
@@ -210,7 +210,7 @@ void send_unlock(char door) {
 }
 
 void send_speed() {
-	int kph = (current_speed / 0.6213751) * 100;
+	int kph = (int)current_speed * 100;
 	memset(&cf, 0, sizeof(cf));
 	cf.can_id = speed_id;
 	cf.len = speed_len;
