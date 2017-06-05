@@ -11,7 +11,7 @@ controls: controls.o
 	$(CC) $(CFLAGS) -o controls controls.c $(LDFLAGS)
 
 lib.o:
-	$(CC) lib.c
+	$(CC) -c lib.c
 
 clean:
-	rm -rf icsim controls icsim.o controls.o
+	rm -rf icsim controls icsim.o controls.o lib.o
