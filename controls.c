@@ -26,7 +26,7 @@
 #if !(DISABLE_SDL)
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 
 #ifndef DATA_DIR
 #define DATA_DIR "./data/"
@@ -113,7 +113,7 @@ int gJoyZ = JOY_UNKNOWN;
 //Analog joystick dead zone
 const int JOYSTICK_DEAD_ZONE = 8000;
 int gLastAccelValue = 0; // Non analog R2
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 
 int s; // socket
 struct canfd_frame cf;
@@ -169,7 +169,7 @@ char *get_data(char *fname) {
 	strncat(data_file, fname, 255-strlen(data_file));
 	return data_file;
 }
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 
 
 void send_pkt(int mtu) {
@@ -424,7 +424,7 @@ void print_joy_info() {
 	}
 	map_joy();
 }
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 
 void *watch_input(void* arg)
 {
@@ -565,7 +565,7 @@ int main(int argc, char *argv[]) {
 	int button, axis; // Used for checking dynamic joystick mappings
 	SDL_Surface *image = NULL;
 	SDL_Window *window = NULL;
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 
 	while ((opt = getopt(argc, argv, "Xdl:s:T:tkh?")) != -1) {
 		switch(opt) {
@@ -719,7 +719,7 @@ int main(int argc, char *argv[]) {
 				}
 			}
 		}
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 	}
 
 	// UI Setup
@@ -739,7 +739,7 @@ int main(int argc, char *argv[]) {
 		renderer = SDL_CreateRenderer(window, -1, 0);
 		image = IMG_Load(get_data("joypad.png"));
 		base_texture = SDL_CreateTextureFromSurface(renderer, image);
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 	}
 	ui.redraw();
 
@@ -943,7 +943,7 @@ int main(int argc, char *argv[]) {
 						break;
 				}
 			}
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 			clock_gettime(CLOCK_MONOTONIC, &currentTime);
 			current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
 			check_accel();
@@ -963,6 +963,6 @@ int main(int argc, char *argv[]) {
 			SDL_DestroyWindow(window);
 			SDL_Quit();
 		}
-#endif // DISABLE_SDL
+#endif // !DISABLE_SDL
 	}
 }
