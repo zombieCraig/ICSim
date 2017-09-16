@@ -953,16 +953,18 @@ int main(int argc, char *argv[]) {
 		ui.redraw();
 		usleep(5000);
 
-		close(s);
+	} // while(running)
+
+	close(s);
+
 #if !(DISABLE_SDL)
-		if (!keyboard_mode || !text_mode) {
-			SDL_DestroyTexture(base_texture);
-			SDL_FreeSurface(image);
-			SDL_GameControllerClose(gGameController);
-			SDL_DestroyRenderer(renderer);
-			SDL_DestroyWindow(window);
-			SDL_Quit();
-		}
-#endif // !DISABLE_SDL
+	if (!keyboard_mode || !text_mode) {
+		SDL_DestroyTexture(base_texture);
+		SDL_FreeSurface(image);
+		SDL_GameControllerClose(gGameController);
+		SDL_DestroyRenderer(renderer);
+		SDL_DestroyWindow(window);
+		SDL_Quit();
 	}
+#endif // !DISABLE_SDL
 }
