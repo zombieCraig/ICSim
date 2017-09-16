@@ -943,15 +943,15 @@ int main(int argc, char *argv[]) {
 						break;
 				}
 			}
-#endif // !DISABLE_SDL
-			clock_gettime(CLOCK_MONOTONIC, &currentTime);
-			current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
-			check_accel();
-			check_turn();
-			check_locks();
-			ui.redraw();
-			usleep(5000);
 		}
+#endif // !DISABLE_SDL
+		clock_gettime(CLOCK_MONOTONIC, &currentTime);
+		current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
+		check_accel();
+		check_turn();
+		check_locks();
+		ui.redraw();
+		usleep(5000);
 
 		close(s);
 #if !(DISABLE_SDL)
