@@ -522,6 +522,14 @@ void redraw_tui() {
 	printf("Throttle: %s\n", throttle > 0 ? "ON" : "OFF");
 	printf("Unlock enabled: %s\n", unlock_enabled ? "YES" : "NO");
 	printf("Lock enabled: %s\n", lock_enabled ? "YES" : "NO");
+
+	// Print controls
+	printf("\nControls:\n");
+	printf("WASD: Turn left/right, throttle on/off\n");
+	printf("Space: Turn off indicator\n");
+	printf("Q/E: Enable lock/unlock\n");
+	printf("1234: Lock/unlock specified door\n");
+	printf("Ctrl-C: Quit\n");
 }
 
 // Plays background can traffic
