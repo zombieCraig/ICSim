@@ -230,6 +230,7 @@ void send_speed() {
 	cf.data[speed_pos+1] = (char)kph & 0xff;
 	cf.data[speed_pos] = (char)(kph >> 8) & 0xff;
 	if(kph == 0) { // IDLE
+		// Add some jitter
 		cf.data[speed_pos] = 1;
 		cf.data[speed_pos+1] = rand() % 255+100;
 	}
@@ -502,6 +503,7 @@ void *watch_input(void* arg)
 	tcsetattr(fileno(stdin), TCSANOW, &orig_attr);
 	return NULL;
 }
+
 void clear_screen()
 {
 	write(STDOUT_FILENO,  "\e[1;1H\e[2J", 10);
@@ -516,6 +518,7 @@ void redraw_tui() {
 		printf("OFF\n");
 	}
 
+	if (debug) printf("Speed: %.02lf km/h\n", current_speed);
 	printf("Throttle: %s\n", throttle > 0 ? "ON" : "OFF");
 	printf("Unlock enabled: %s\n", unlock_enabled ? "YES" : "NO");
 	printf("Lock enabled: %s\n", lock_enabled ? "YES" : "NO");

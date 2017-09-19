@@ -272,8 +272,8 @@ void update_speed_status(struct canfd_frame *cf, int maxdlen) {
 	if(len < speed_pos + 1) return;
 	int speed = cf->data[speed_pos] << 8;
 	speed += cf->data[speed_pos + 1];
-	speed = speed / 100; // speed in kilometers
-	current_speed = speed * 0.6213751; // mph
+	current_speed = speed / 100; // speed in kilometers
+	current_speed = current_speed * 0.6213751; // mph
 }
 
 /* Parses CAN frame and updates turn signal status */
