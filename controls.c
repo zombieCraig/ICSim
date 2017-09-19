@@ -459,6 +459,9 @@ void *watch_input(void* arg)
 				break;
 			case ' ':
 				turning = 0;
+				throttle = 0;
+				lock_enabled = 0;
+				unlock_enabled = 0;
 				break;
 			case 'q':
 				lock_enabled = 1;
@@ -526,9 +529,9 @@ void redraw_tui() {
 	// Print controls
 	printf("\nControls:\n");
 	printf("WASD: Turn left/right, throttle on/off\n");
-	printf("Space: Turn off indicator\n");
 	printf("Q/E: Enable lock/unlock\n");
 	printf("1234: Lock/unlock specified door\n");
+	printf("Space: Unset everything/cruise\n");
 	printf("Ctrl-C: Quit\n");
 }
 
