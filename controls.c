@@ -55,6 +55,7 @@
 #define DOOR_UNLOCKED 1
 #define MAX_SPEED 150.0 // Limiter 260.0 is full gauge speed
 #define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
+#define MIN_MESSAGE_PERIOD 10 // Time in ms between CAN messages
 
 #if !(DISABLE_SDL)
 #define SCREEN_WIDTH 835
@@ -571,6 +572,7 @@ int main(int argc, char *argv[]) {
 	int running = 1;
 	int enable_canfd = 1;
 	int enable_background_traffic = 1;
+	int last_ms = 0;
 	struct stat st;
 	struct ui_t ui = {0};
 
@@ -959,13 +961,18 @@ int main(int argc, char *argv[]) {
 			}
 		}
 #endif // !DISABLE_SDL
-		clock_gettime(CLOCK_MONOTONIC, &currentTime);
-		current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
 		check_accel();
 		check_turn();
 		check_locks();
 		ui.redraw();
-		usleep(5000);
+
+		// Limit max messages per second
+		while (current_ms - last_ms < MIN_MESSAGE_PERIOD) {
+			usleep(1000);
+			clock_gettime(CLOCK_MONOTONIC, &currentTime);
+			current_ms = currentTime.tv_sec * 1000 + currentTime.tv_nsec / 1000000;
+		}
+		last_ms = current_ms;
 
 	} // while(running)
 

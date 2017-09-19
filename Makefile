@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-I/usr/include/SDL2 -Wall -Werror
+CFLAGS=-I/usr/include/SDL2 -Wall -Werror -std=gnu99
 LDFLAGS=-lSDL2 -lSDL2_image
 
 all: icsim controls
