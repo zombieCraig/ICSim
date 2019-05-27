@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 #include <getopt.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
@@ -43,6 +44,15 @@
 #define DEFAULT_SPEED_ID 580 // 0x244
 #define DEFAULT_SPEED_BYTE 3 // bytes 3,4
 
+// For now, specific models will be done as constants.  Later
+// We should use a config file
+#define MODEL_BMW_X1_SPEED_ID 0x1B4
+#define MODEL_BMW_X1_SPEED_BYTE 0
+#define MODEL_BMW_X1_RPM_ID 0x0AA
+#define MODEL_BMW_X1_RPM_BYTE 4
+#define MODEL_BMW_X1_HANDBRAKE_ID 0x1B4  // Not implemented yet
+#define MODEL_BMW_X1_HANDBRAKE_BYTE 5
+
 const int canfd_on = 1;
 int debug = 0;
 int randomize = 0;
@@ -53,6 +63,7 @@ int speed_pos = DEFAULT_SPEED_BYTE;
 long current_speed = 0;
 int door_status[4];
 int turn_status[2];
+char *model = NULL;
 char data_file[256];
 SDL_Renderer *renderer = NULL;
 SDL_Texture *base_texture = NULL;
@@ -225,10 +236,16 @@ void redraw_ic() {
 void update_speed_status(struct canfd_frame *cf, int maxdlen) {
   int len = (cf->len > maxdlen) ? maxdlen : cf->len;
   if(len < speed_pos + 1) return;
-  int speed = cf->data[speed_pos] << 8;
-  speed += cf->data[speed_pos + 1];
-  speed = speed / 100; // speed in kilometers
-  current_speed = speed * 0.6213751; // mph
+  if (model) {
+	if (!strncmp(model, "bmw", 3)) {
+		current_speed = (((cf->data[speed_pos + 1] - 208) * 256) + cf->data[speed_pos]) / 16;
+	}
+  } else {
+	  int speed = cf->data[speed_pos] << 8;
+	  speed += cf->data[speed_pos + 1];
+	  speed = speed / 100; // speed in kilometers
+	  current_speed = speed * 0.6213751; // mph
+  }
   update_speed();
   SDL_RenderPresent(renderer);
 }
@@ -285,6 +302,7 @@ void Usage(char *msg) {
   printf("\t-r\trandomize IDs\n");
   printf("\t-s\tseed value\n");
   printf("\t-d\tdebug mode\n");
+  printf("\t-m\tmodel NAME  (Ex: -m bmw)\n");
   exit(1);
 }
 
@@ -308,7 +326,7 @@ int main(int argc, char *argv[]) {
   int door_id, signal_id, speed_id;
   SDL_Event event;
 
-  while ((opt = getopt(argc, argv, "rs:dh?")) != -1) {
+  while ((opt = getopt(argc, argv, "rs:dm:h?")) != -1) {
     switch(opt) {
 	case 'r':
 		randomize = 1;
@@ -318,6 +336,9 @@ int main(int argc, char *argv[]) {
 		break;
 	case 'd':
 		debug = 1;
+		break;
+	case 'm':
+		model = optarg;
 		break;
 	case 'h':
 	case '?':
@@ -387,6 +408,14 @@ int main(int argc, char *argv[]) {
 	FILE *fdseed = fopen("/tmp/icsim_seed.txt", "w");
 	fprintf(fdseed, "%d\n", seed);
 	fclose(fdseed);
+  } else if (model) {
+	if (!strncmp(model, "bmw", 3)) {
+		speed_id = MODEL_BMW_X1_SPEED_ID;
+		speed_pos = MODEL_BMW_X1_SPEED_BYTE;
+	} else {
+		printf("Unknown model.  Acceptable models: bmw\n");
+		exit(3);
+	}
   }
 
   SDL_Window *window = NULL;

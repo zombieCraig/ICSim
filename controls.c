@@ -82,6 +82,16 @@
 #define USB_CONTROLLER 0
 #define PS3_CONTROLLER 1
 
+// For now, specific models will be done as constants.  Later
+// We should use a config file
+#define MODEL_BMW_X1_SPEED_ID 0x1B4
+#define MODEL_BMW_X1_SPEED_BYTE 0
+#define MODEL_BMW_X1_RPM_ID 0x0AA
+#define MODEL_BMW_X1_RPM_BYTE 4
+#define MODEL_BMW_X1_HANDBRAKE_ID 0x1B4  // Not implemented yet
+#define MODEL_BMW_X1_HANDBRAKE_BYTE 5
+
+
 int gButtonY = BUTTON_Y;
 int gButtonX = BUTTON_X;
 int gButtonA = BUTTON_A;
@@ -115,6 +125,7 @@ int door_len = DEFAULT_DOOR_POS + 1;
 int signal_len = DEFAULT_DOOR_POS + 1;
 int speed_len = DEFAULT_SPEED_POS + 2;
 int difficulty = DEFAULT_DIFFICULTY;
+char *model = NULL;
 
 int lock_enabled = 0;
 int unlock_enabled = 0;
@@ -192,19 +203,38 @@ void send_unlock(char door) {
 }
 
 void send_speed() {
-	int kph = (current_speed / 0.6213751) * 100;
-	memset(&cf, 0, sizeof(cf));
-	cf.can_id = speed_id;
-	cf.len = speed_len;
-	cf.data[speed_pos+1] = (char)kph & 0xff;
-	cf.data[speed_pos] = (char)(kph >> 8) & 0xff;
-	if(kph == 0) { // IDLE
-		cf.data[speed_pos] = 1;
-		cf.data[speed_pos+1] = rand() % 255+100;
+	if (model) {
+		if (!strncmp(model, "bmw", 3)) {
+		        int b = ((16 * current_speed)/256) + 208;
+			int a = 16 * current_speed - ((b-208) * 256);
+		        memset(&cf, 0, sizeof(cf));
+		        cf.can_id = speed_id;
+		        cf.len = speed_len;
+		        cf.data[speed_pos+1] = (char)b & 0xff;
+		        cf.data[speed_pos] = (char)a & 0xff;
+		        if(current_speed == 0) { // IDLE
+		                cf.data[speed_pos] = rand() % 80;
+		                cf.data[speed_pos+1] = 208;
+		        }
+		        if (speed_pos) randomize_pkt(0, speed_pos);
+		        if (speed_len != speed_pos + 2) randomize_pkt(speed_pos+2, speed_len);
+		        send_pkt(CAN_MTU);
+		}
+	} else {
+		int kph = (current_speed / 0.6213751) * 100;
+		memset(&cf, 0, sizeof(cf));
+		cf.can_id = speed_id;
+		cf.len = speed_len;
+		cf.data[speed_pos+1] = (char)kph & 0xff;
+		cf.data[speed_pos] = (char)(kph >> 8) & 0xff;
+		if(kph == 0) { // IDLE
+			cf.data[speed_pos] = 1;
+			cf.data[speed_pos+1] = rand() % 255+100;
+		}
+		if (speed_pos) randomize_pkt(0, speed_pos);
+		if (speed_len != speed_pos + 2) randomize_pkt(speed_pos+2, speed_len);
+		send_pkt(CAN_MTU);
 	}
-	if (speed_pos) randomize_pkt(0, speed_pos);
-	if (speed_len != speed_pos + 2) randomize_pkt(speed_pos+2, speed_len);
-	send_pkt(CAN_MTU);
 }
 
 void send_turn_signal() {
@@ -409,6 +439,7 @@ void usage(char *msg) {
   printf("\t-s\tseed value from IC\n");
   printf("\t-l\tdifficulty level. 0-2 (default: %d)\n", DEFAULT_DIFFICULTY);
   printf("\t-t\ttraffic file to use for bg CAN traffic\n");
+  printf("\t-m\tModel (Ex: -m bmw)\n");
   printf("\t-X\tDisable background CAN traffic.  Cheating if doing RE but needed if playing on a real CANbus\n");
   printf("\t-d\tdebug mode\n");
   exit(1);
@@ -424,7 +455,7 @@ int main(int argc, char *argv[]) {
   struct stat st;
   SDL_Event event;
 
-  while ((opt = getopt(argc, argv, "Xdl:s:t:h?")) != -1) {
+  while ((opt = getopt(argc, argv, "Xdl:s:t:m:h?")) != -1) {
     switch(opt) {
 	case 'l':
 		difficulty = atoi(optarg);
@@ -437,6 +468,9 @@ int main(int argc, char *argv[]) {
 		break;
 	case 'd':
 		debug = 1;
+		break;
+	case 'm':
+		model = optarg;
 		break;
 	case 'X':
 		play_traffic = 0;
@@ -499,6 +533,13 @@ int main(int argc, char *argv[]) {
 	door_len = door_pos + 1;
 	signal_len = signal_pos + 1;
 	speed_len = speed_len + 2;
+  } else if (model) {
+	if (!strncmp(model, "bmw", 3)) {
+		speed_id = MODEL_BMW_X1_SPEED_ID;
+		speed_pos = MODEL_BMW_X1_SPEED_BYTE;
+	} else {
+		printf("Invalid model.  Valid entries are: bmw\n");
+	}
   }
 
   if(difficulty > 0) {
