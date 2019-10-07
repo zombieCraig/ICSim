@@ -10,7 +10,7 @@ You will need:
 * SDL2_Image
 * can-utils
 
-You can get can-utils from github or on Ubuntu you may run the follwoing
+You can get can-utils from github or on Ubuntu you may run the following
 
 ```
   sudo apt-get install libsdl2-dev libsdl2-image-dev can-utils  
