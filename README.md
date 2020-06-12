@@ -61,6 +61,16 @@ If lib.o doesn't link it's probably because it's the wrong arch for your platfor
 want to compile can-utils and copy the newly compiled lib.o to the icsim directory.  You can get can-utils
 from: https://github.com/linux-can/can-utils
 
+## read: Bad address
+When running `./icsim vcan0` you end up getting a `read: Bad Address` message,
+this is typically a result of needing to recompile with updated SDL libraries.
+Make sure you have the recommended latest SDL2 libraries.  Some users have
+reported fixing this problem by creating symlinks to the SDL.h files manually
+or you could edit the Makefile and change the CFLAGS to point to wherever your
+distro installs the SDL.h header, ie: /usr/include/x86_64-linux-gnu/SDL2
+
+There was also a report that on Arch linux needed sdl2_gfx library.
+
 CAN Hacking Training Usage
 --------------------------
 To *safely* train on CAN hacking you can play back a sample recording included in this repo of generic CAN traffic.  This will
