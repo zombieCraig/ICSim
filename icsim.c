@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <getopt.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -462,10 +463,15 @@ int main(int argc, char *argv[]) {
       SDL_Delay(3);
     }
 
-      nbytes = recvmsg(can, &msg, 0);
+      nbytes = recvmsg(can, &msg, MSG_DONTWAIT);
       if (nbytes < 0) {
-        perror("read");
-        return 1;
+        if (errno == EWOULDBLOCK) {
+          usleep(10000); // 10ms
+          continue;
+        } else {
+          perror("read");
+          return 1;
+        }
       }  
       if ((size_t)nbytes == CAN_MTU)
         maxdlen = CAN_MAX_DLEN;
