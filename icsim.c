@@ -54,6 +54,13 @@
 #define MODEL_BMW_X1_HANDBRAKE_ID 0x1B4  // Not implemented yet
 #define MODEL_BMW_X1_HANDBRAKE_BYTE 5
 
+#define MODEL_PSA_SPEED_ID 0x38D
+#define MODEL_PSA_SPEED_BYTE 0
+#define MODEL_PSA_RPM_ID 0x208
+#define MODEL_PSA_RPM_BYTE 0
+#define MODEL_PSA_HANDBRAKE_ID 0x412  // Not implemented yet
+#define MODEL_PSA_HANDBRAKE_BYTE 5 // TBD
+
 const int canfd_on = 1;
 int debug = 0;
 int randomize = 0;
@@ -241,7 +248,9 @@ void update_speed_status(struct canfd_frame *cf, int maxdlen) {
   if (model) {
 	if (!strncmp(model, "bmw", 3)) {
 		current_speed = (((cf->data[speed_pos + 1] - 208) * 256) + cf->data[speed_pos]) / 10;
-	}
+	} else if (!strncmp(model, "psa", 3)) {
+		current_speed = cf->data[speed_pos] * 2.5; // in km/h
+        }
   } else {
 	  int speed = cf->data[speed_pos] << 8;
 	  speed += cf->data[speed_pos + 1];
@@ -307,7 +316,7 @@ void Usage(char *msg) {
   printf("\t-r\trandomize IDs\n");
   printf("\t-s\tseed value\n");
   printf("\t-d\tdebug mode\n");
-  printf("\t-m\tmodel NAME  (Ex: -m bmw)\n");
+  printf("\t-m\tmodel NAME  (Ex: -m bmw or -m psa)\n");
   printf("\t-u\tunits us|metric (Default: us)\n");
   exit(1);
 }
@@ -423,8 +432,11 @@ int main(int argc, char *argv[]) {
 	if (!strncmp(model, "bmw", 3)) {
 		speed_id = MODEL_BMW_X1_SPEED_ID;
 		speed_pos = MODEL_BMW_X1_SPEED_BYTE;
+        } else if (!strncmp(model, "psa", 3)) {
+		speed_id = MODEL_PSA_SPEED_ID;
+		speed_pos = MODEL_PSA_SPEED_BYTE;
 	} else {
-		printf("Unknown model.  Acceptable models: bmw\n");
+		printf("Unknown model.  Acceptable models: bmw psa\n");
 		exit(3);
 	}
   }
