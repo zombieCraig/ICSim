@@ -91,6 +91,12 @@
 #define MODEL_BMW_X1_HANDBRAKE_ID 0x1B4  // Not implemented yet
 #define MODEL_BMW_X1_HANDBRAKE_BYTE 5
 
+#define MODEL_PSA_SPEED_ID 0x38D
+#define MODEL_PSA_SPEED_BYTE 0
+#define MODEL_PSA_RPM_ID 0x208
+#define MODEL_PSA_RPM_BYTE 0
+#define MODEL_PSA_HANDBRAKE_ID 0x412  // Not implemented yet
+#define MODEL_PSA_HANDBRAKE_BYTE 5 // TBD
 
 int gButtonY = BUTTON_Y;
 int gButtonX = BUTTON_X;
@@ -218,6 +224,12 @@ void send_speed() {
 		        }
 		        if (speed_pos) randomize_pkt(0, speed_pos);
 		        if (speed_len != speed_pos + 2) randomize_pkt(speed_pos+2, speed_len);
+		        send_pkt(CAN_MTU);
+		} else if (!strncmp(model, "psa", 3)) {
+		        memset(&cf, 0, sizeof(cf));
+		        cf.can_id = speed_id;
+		        cf.len = speed_len;
+		        cf.data[speed_pos] = current_speed / 2.5;
 		        send_pkt(CAN_MTU);
 		}
 	} else {
@@ -439,7 +451,7 @@ void usage(char *msg) {
   printf("\t-s\tseed value from IC\n");
   printf("\t-l\tdifficulty level. 0-2 (default: %d)\n", DEFAULT_DIFFICULTY);
   printf("\t-t\ttraffic file to use for bg CAN traffic\n");
-  printf("\t-m\tModel (Ex: -m bmw)\n");
+  printf("\t-m\tModel (Ex: -m bmw or -m psa)\n");
   printf("\t-X\tDisable background CAN traffic.  Cheating if doing RE but needed if playing on a real CANbus\n");
   printf("\t-d\tdebug mode\n");
   exit(1);
@@ -537,8 +549,11 @@ int main(int argc, char *argv[]) {
 	if (!strncmp(model, "bmw", 3)) {
 		speed_id = MODEL_BMW_X1_SPEED_ID;
 		speed_pos = MODEL_BMW_X1_SPEED_BYTE;
+        } else if (!strncmp(model, "psa", 3)) {
+		speed_id = MODEL_PSA_SPEED_ID;
+		speed_pos = MODEL_PSA_SPEED_BYTE;
 	} else {
-		printf("Invalid model.  Valid entries are: bmw\n");
+		printf("Invalid model.  Valid entries are: psa\n");
 	}
   }
 
