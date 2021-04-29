@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <getopt.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -53,6 +54,13 @@
 #define MODEL_BMW_X1_HANDBRAKE_ID 0x1B4  // Not implemented yet
 #define MODEL_BMW_X1_HANDBRAKE_BYTE 5
 
+#define MODEL_PSA_SPEED_ID 0x38D
+#define MODEL_PSA_SPEED_BYTE 0
+#define MODEL_PSA_RPM_ID 0x208
+#define MODEL_PSA_RPM_BYTE 0
+#define MODEL_PSA_HANDBRAKE_ID 0x412  // Not implemented yet
+#define MODEL_PSA_HANDBRAKE_BYTE 5 // TBD
+
 const int canfd_on = 1;
 int debug = 0;
 int randomize = 0;
@@ -61,6 +69,7 @@ int door_pos = DEFAULT_DOOR_BYTE;
 int signal_pos = DEFAULT_SIGNAL_BYTE;
 int speed_pos = DEFAULT_SPEED_BYTE;
 long current_speed = 0;
+int metric_units = 0;
 int door_status[4];
 int turn_status[2];
 char *model = NULL;
@@ -238,13 +247,18 @@ void update_speed_status(struct canfd_frame *cf, int maxdlen) {
   if(len < speed_pos + 1) return;
   if (model) {
 	if (!strncmp(model, "bmw", 3)) {
-		current_speed = (((cf->data[speed_pos + 1] - 208) * 256) + cf->data[speed_pos]) / 16;
-	}
+		current_speed = (((cf->data[speed_pos + 1] - 208) * 256) + cf->data[speed_pos]) / 10;
+	} else if (!strncmp(model, "psa", 3)) {
+		current_speed = cf->data[speed_pos] * 2.5; // in km/h
+        }
   } else {
 	  int speed = cf->data[speed_pos] << 8;
 	  speed += cf->data[speed_pos + 1];
 	  speed = speed / 100; // speed in kilometers
-	  current_speed = speed * 0.6213751; // mph
+          current_speed = speed;
+  }
+  if (!metric_units) {
+	  current_speed = current_speed * 0.6213751; // mph
   }
   update_speed();
   SDL_RenderPresent(renderer);
@@ -302,7 +316,8 @@ void Usage(char *msg) {
   printf("\t-r\trandomize IDs\n");
   printf("\t-s\tseed value\n");
   printf("\t-d\tdebug mode\n");
-  printf("\t-m\tmodel NAME  (Ex: -m bmw)\n");
+  printf("\t-m\tmodel NAME  (Ex: -m bmw or -m psa)\n");
+  printf("\t-u\tunits us|metric (Default: us)\n");
   exit(1);
 }
 
@@ -326,7 +341,7 @@ int main(int argc, char *argv[]) {
   int door_id, signal_id, speed_id;
   SDL_Event event;
 
-  while ((opt = getopt(argc, argv, "rs:dm:h?")) != -1) {
+  while ((opt = getopt(argc, argv, "rs:dm:u:h?")) != -1) {
     switch(opt) {
 	case 'r':
 		randomize = 1;
@@ -340,6 +355,11 @@ int main(int argc, char *argv[]) {
 	case 'm':
 		model = optarg;
 		break;
+        case 'u':
+                if (optarg[0] == 'm') {
+                    metric_units = 1;
+                }
+                break;
 	case 'h':
 	case '?':
 	default:
@@ -412,8 +432,11 @@ int main(int argc, char *argv[]) {
 	if (!strncmp(model, "bmw", 3)) {
 		speed_id = MODEL_BMW_X1_SPEED_ID;
 		speed_pos = MODEL_BMW_X1_SPEED_BYTE;
+        } else if (!strncmp(model, "psa", 3)) {
+		speed_id = MODEL_PSA_SPEED_ID;
+		speed_pos = MODEL_PSA_SPEED_BYTE;
 	} else {
-		printf("Unknown model.  Acceptable models: bmw\n");
+		printf("Unknown model.  Acceptable models: bmw psa\n");
 		exit(3);
 	}
   }
@@ -429,7 +452,7 @@ int main(int argc, char *argv[]) {
 	printf("Window could not be shown\n");
   }
   renderer = SDL_CreateRenderer(window, -1, 0);
-  SDL_Surface *image = IMG_Load(get_data("ic.png"));
+  SDL_Surface *image = IMG_Load(get_data(metric_units ? "ic-metric.png" : "ic.png"));
   SDL_Surface *needle = IMG_Load(get_data("needle.png"));
   SDL_Surface *sprites = IMG_Load(get_data("spritesheet.png"));
   base_texture = SDL_CreateTextureFromSurface(renderer, image);
@@ -462,10 +485,15 @@ int main(int argc, char *argv[]) {
       SDL_Delay(3);
     }
 
-      nbytes = recvmsg(can, &msg, 0);
+      nbytes = recvmsg(can, &msg, MSG_DONTWAIT);
       if (nbytes < 0) {
-        perror("read");
-        return 1;
+        if (errno == EWOULDBLOCK) {
+          usleep(10000); // 10ms
+          continue;
+        } else {
+          perror("read");
+          return 1;
+        }
       }  
       if ((size_t)nbytes == CAN_MTU)
         maxdlen = CAN_MAX_DLEN;
