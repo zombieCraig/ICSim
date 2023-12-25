@@ -16,6 +16,13 @@ You can get can-utils from github or on Ubuntu you may run the following
   sudo apt-get install libsdl2-dev libsdl2-image-dev can-utils  
 ```
 
+With dependencies installed, you may use the [Meson build system](https://mesonbuild.com/) to build the project:
+
+```
+  meson setup builddir && cd builddir
+  meson compile
+```
+
 Testing on a virtual CAN interface
 ----------------------------------
 You can run the following commands to setup a virtual can interface
