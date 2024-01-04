@@ -356,7 +356,7 @@ void kk_check(int k) {
 	kk = kk == 8 ? kk+1 : 0;
 	break;
     default:
-	kk == 0;
+	kk = 0;
   }
 }
 
@@ -448,7 +448,6 @@ void usage(char *msg) {
 int main(int argc, char *argv[]) {
   int opt;
   struct sockaddr_can addr;
-  struct canfd_frame frame;
   int running = 1;
   int enable_canfd = 1;
   int play_traffic = 1;
@@ -575,7 +574,6 @@ int main(int argc, char *argv[]) {
 
   // GUI Setup
   SDL_Window *window = NULL;
-  SDL_Surface *screenSurface = NULL;
   if(SDL_Init ( SDL_INIT_VIDEO | SDL_INIT_JOYSTICK ) < 0 ) {
         printf("SDL Could not initializes\n");
         exit(40);
@@ -627,6 +625,7 @@ int main(int argc, char *argv[]) {
 			redraw_screen();
 			break;
 		}
+                break;
 	    case SDL_KEYDOWN:
 		switch(event.key.keysym.sym) {
 		    case SDLK_UP:

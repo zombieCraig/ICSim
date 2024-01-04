@@ -315,15 +315,12 @@ int main(int argc, char *argv[]) {
   struct iovec iov;
   struct msghdr msg;
   struct cmsghdr *cmsg;
-  struct timeval tv, timeout_config = { 0, 0 };
   struct stat dirstat;
-  fd_set rdfs;
   char ctrlmsg[CMSG_SPACE(sizeof(struct timeval)) + CMSG_SPACE(sizeof(__u32))];
   int running = 1;
   int nbytes, maxdlen;
-  int ret;
   int seed = 0;
-  int door_id, signal_id, speed_id;
+  canid_t door_id, signal_id, speed_id;
   SDL_Event event;
 
   while ((opt = getopt(argc, argv, "rs:dm:h?")) != -1) {
@@ -419,12 +416,12 @@ int main(int argc, char *argv[]) {
   }
 
   SDL_Window *window = NULL;
-  SDL_Surface *screenSurface = NULL;
   if(SDL_Init ( SDL_INIT_VIDEO ) < 0 ) {
 	printf("SDL Could not initializes\n");
 	exit(40);
   }
-  window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN); // | SDL_WINDOW_RESIZABLE);
+  window = SDL_CreateWindow("IC Simulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT,
+                            SDL_WINDOW_SHOWN); // | SDL_WINDOW_RESIZABLE);
   if(window == NULL) {
 	printf("Window could not be shown\n");
   }
@@ -478,8 +475,9 @@ int main(int argc, char *argv[]) {
       for (cmsg = CMSG_FIRSTHDR(&msg);
            cmsg && (cmsg->cmsg_level == SOL_SOCKET);
            cmsg = CMSG_NXTHDR(&msg,cmsg)) {
-             if (cmsg->cmsg_type == SO_TIMESTAMP)
-               tv = *(struct timeval *)CMSG_DATA(cmsg);
+             if (cmsg->cmsg_type == SO_TIMESTAMP) {
+               // struct timeval tv = *(struct timeval *)CMSG_DATA(cmsg);
+             }
              else if (cmsg->cmsg_type == SO_RXQ_OVFL)
                //dropcnt[i] = *(__u32 *)CMSG_DATA(cmsg);
   	     fprintf(stderr, "Dropped packet\n");
