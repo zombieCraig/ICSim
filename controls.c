@@ -41,23 +41,20 @@
 #define MAX_SPEED 90.0 // Limiter 260.0 is full guage speed
 #define ACCEL_RATE 8.0 // 0-MAX_SPEED in seconds
 
-int s; // socket
-struct canfd_frame cf;
-struct ifreq ifr;
+typedef struct {
+	char signal; // 0
+	int turning; // 0
+	int lastTurnSignal; // 0
+} signal_state_t;
 
-char signal_state = 0;
-int throttle = 0;
-float current_speed = 0;
-int turning = 0;
-int currentTime;
-int lastAccel = 0;
-int lastTurnSignal = 0;
+typedef struct {
+	int throttle; // 0
+	float current_speed; // 0
+	int lastAccel; // 0
+} speed_state_t;
 
 int play_id;
 
-// Adds data dir to file name
-// Uses a single pointer so not to have a memory leak
-// returns point to data_files or NULL if append is too large
 char *get_data(char *fname, char *data_file)
 {
 	if (strlen(DATA_DIR) + strlen(fname) > DATA_FILE_SIZE - 1)
@@ -67,17 +64,19 @@ char *get_data(char *fname, char *data_file)
 	return data_file;
 }
 
-void send_pkt(int mtu)
+void send_pkt(int mtu, struct canfd_frame cf, int sock)
 {
-	if (write(s, &cf, mtu) != mtu)
+	if (write(sock, &cf, mtu) != mtu)
 	{
 		perror("write");
 	}
 }
 
-void send_speed()
+void send_speed(int sock, int speed)
 {
-	int kph = (current_speed / 0.6213751) * 100;
+	struct canfd_frame cf;
+
+	int kph = (speed / 0.6213751) * 100;
 	memset(&cf, 0, sizeof(cf));
 	cf.can_id = SPEED_ID;
 	cf.len = SPEED_LEN;
@@ -91,67 +90,66 @@ void send_speed()
 		cf.data[DEFAULT_SPEED_POS] = (char)(kph >> 8) & 0xff;
 		cf.data[DEFAULT_SPEED_POS + 1] = (char)kph & 0xff;
 	}
-	send_pkt(CAN_MTU);
+	send_pkt(CAN_MTU, cf, sock);
 }
 
-void send_turn_signal()
+void send_turn_signal(int sock, char signal)
 {
+	struct canfd_frame cf;
+
 	memset(&cf, 0, sizeof(cf));
 	cf.can_id = SIGNAL_ID;
 	cf.len = SIGNAL_LEN;
-	cf.data[SIGNAL_POS] = signal_state;
-	send_pkt(CAN_MTU);
+	cf.data[SIGNAL_POS] = signal;
+	send_pkt(CAN_MTU, cf, sock);
 }
 
-// Checks throttle to see if we should accelerate or decelerate the vehicle
-void checkAccel()
+void checkAccel(int sock, int currentTime, speed_state_t *speed_state)
 {
 	float rate = MAX_SPEED / (ACCEL_RATE * 100);
-	// Updated every 10 ms
-	if (currentTime > lastAccel + 10)
+	if (currentTime > speed_state->lastAccel + 10) // Updated every 10 ms
 	{
-		if (throttle < 0)
+		if (speed_state->throttle < 0)
 		{
-			current_speed -= rate;
-			if (current_speed < 1)
-				current_speed = 0;
+			speed_state->current_speed -= rate;
+			if (speed_state->current_speed < 1)
+				speed_state->current_speed = 0;
 		}
-		else if (throttle > 0)
+		else if (speed_state->throttle > 0)
 		{
-			current_speed += rate;
-			if (current_speed > MAX_SPEED)
-			{ // Limiter
-				current_speed = MAX_SPEED;
+			speed_state->current_speed += rate;
+			if (speed_state->current_speed > MAX_SPEED) // Limiter
+			{ 
+				speed_state->current_speed = MAX_SPEED;
 			}
 		}
-		send_speed();
-		lastAccel = currentTime;
+		send_speed(sock, speed_state->current_speed);
+		speed_state->lastAccel = currentTime;
 	}
 }
 
-// Checks if turning and activates the turn signal
-void checkTurn()
+void checkTurn(int sock, int currentTime, signal_state_t *signal_state)
 {
-	if (currentTime > lastTurnSignal + 500)
+	if (currentTime > signal_state->lastTurnSignal + 500)
 	{
-		if (turning < 0)
+		if (signal_state->turning < 0)
 		{
-			signal_state ^= LEFT_SIGNAL_VALUE;
+			signal_state->signal ^= LEFT_SIGNAL_VALUE;
 		}
-		else if (turning > 0)
+		else if (signal_state->turning > 0)
 		{
-			signal_state ^= RIGHT_SIGNAL_VALUE;
+			signal_state->signal ^= RIGHT_SIGNAL_VALUE;
 		}
 		else
 		{
-			signal_state = 0;
+			signal_state->signal = 0;
 		}
-		send_turn_signal();
-		lastTurnSignal = currentTime;
+		send_turn_signal(sock, signal_state->signal);
+		signal_state->lastTurnSignal = currentTime;
 	}
 }
 
-void play_can_traffic()
+void play_can_traffic(struct ifreq ifr)
 {
 	char can2can[50];
 	snprintf(can2can, 49, "%s=can0", ifr.ifr_name);
@@ -161,6 +159,7 @@ void play_can_traffic()
 
 void kill_child()
 {
+	puts("killkillkill");
 	kill(play_id, SIGINT);
 }
 
@@ -188,6 +187,11 @@ int main(int argc, char *argv[])
 	SDL_Texture *base_texture = NULL;
 	SDL_Renderer *renderer = NULL;
 	char data_file[DATA_FILE_SIZE];
+	int sock;
+	struct ifreq ifr;
+	int currentTime;
+	speed_state_t speed_state = {0, 0, 0};
+	signal_state_t signal_state = {0, 0, 0};
 
 	/* Get options */
 	while ((opt = getopt(argc, argv, "h?")) != -1)
@@ -206,7 +210,7 @@ int main(int argc, char *argv[])
 		usage("You must specify at least one can device");
 
 	/* Create CAN socket */
-	if ((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0)
+	if ((sock = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0)
 	{
 		perror("socket");
 		return 1;
@@ -215,21 +219,21 @@ int main(int argc, char *argv[])
 	addr.can_family = AF_CAN;
 
 	strcpy(ifr.ifr_name, argv[optind]);
-	if (ioctl(s, SIOCGIFINDEX, &ifr) < 0)
+	if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0)
 	{
 		perror("SIOCGIFINDEX");
 		return 1;
 	}
 	addr.can_ifindex = ifr.ifr_ifindex;
 
-	if (setsockopt(s, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
+	if (setsockopt(sock, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
 				   &enable_canfd, sizeof(enable_canfd)))
 	{
 		perror("error when enabling CAN FD support\n");
 		return 1;
 	}
 
-	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 	{
 		perror("bind");
 		return 1;
@@ -244,10 +248,9 @@ int main(int argc, char *argv[])
 	}
 	else if (play_id == 0)
 	{
-		play_can_traffic(); // Shouldn't return
+		play_can_traffic(ifr); // Shouldn't return
 		exit(0);
 	}
-	atexit(kill_child);
 
 	/* Setup GUI */
 	SDL_Window *window = NULL;
@@ -293,13 +296,13 @@ int main(int argc, char *argv[])
 				switch (event.key.keysym.sym)
 				{
 				case SDLK_UP:
-					throttle = 1;
+					speed_state.throttle = 1;
 					break;
 				case SDLK_LEFT:
-					turning = -1;
+					signal_state.turning = -1;
 					break;
 				case SDLK_RIGHT:
-					turning = 1;
+					signal_state.turning = 1;
 					break;
 				break;
 				}
@@ -308,24 +311,25 @@ int main(int argc, char *argv[])
 				switch (event.key.keysym.sym)
 				{
 				case SDLK_UP:
-					throttle = -1;
+					speed_state.throttle = -1;
 					break;
 				case SDLK_LEFT:
 				case SDLK_RIGHT:
-					turning = 0;
+					signal_state.turning = 0;
 					break;
 				}
 				break;
 			}
 		}
 		currentTime = SDL_GetTicks();
-		checkAccel();
-		checkTurn();
+		checkAccel(sock, currentTime, &speed_state);
+		checkTurn(sock, currentTime, &signal_state);
 		SDL_Delay(5);
 	}
 
 	/* Cleanup */
-	close(s);
+	kill_child();
+	close(sock);
 	SDL_DestroyTexture(base_texture);
 	SDL_FreeSurface(image);
 	SDL_DestroyRenderer(renderer);
